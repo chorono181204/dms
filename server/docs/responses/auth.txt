@@ -1,0 +1,81 @@
+
+========================================
+Endpoint: POST /v1/auth/login
+Date: 2026-01-06T11:46:13.984Z
+Response:
+{
+  "user": {
+    "id": 77,
+    "username": "jackson86",
+    "name": "Mr. Sherry Beer",
+    "role": "USER",
+    "isEmailVerified": true,
+    "createdAt": "2026-01-06T11:46:13.934Z",
+    "updatedAt": "2026-01-06T11:46:13.934Z",
+    "departmentId": null,
+    "signatureImage": null,
+    "digitalCert": null,
+    "phone": null
+  },
+  "tokens": {
+    "access": {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjc3LCJpYXQiOjE3Njc2OTk5NzMsImV4cCI6MTc2NzcwMTc3MywidHlwZSI6IkFDQ0VTUyJ9.HJmb6qugsm-TvtYy-Eqr0Yln7ZtKfQn_Y128pKq1Jp0",
+      "expires": "2026-01-06T12:16:13.976Z"
+    }
+  }
+}
+========================================
+
+========================================
+Endpoint: POST /v1/auth/login
+Date: 2026-01-06T11:48:53.149Z
+Response:
+{
+  "user": {
+    "id": 87,
+    "username": "flossie65",
+    "name": "Kim Stamm",
+    "role": "USER",
+    "isEmailVerified": true,
+    "createdAt": "2026-01-06T11:48:53.101Z",
+    "updatedAt": "2026-01-06T11:48:53.101Z",
+    "departmentId": null,
+    "signatureImage": null,
+    "digitalCert": null,
+    "phone": null
+  },
+  "tokens": {
+    "access": {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjg3LCJpYXQiOjE3Njc3MDAxMzMsImV4cCI6MTc2NzcwMTkzMywidHlwZSI6IkFDQ0VTUyJ9.IR7fnJX2l7ocCPbSezm5ZkDyFets344vygADiSYs7IA",
+      "expires": "2026-01-06T12:18:53.141Z"
+    }
+  }
+}
+========================================
+
+========================================
+Endpoint: POST /v1/auth/login
+Date: 2026-01-06T12:01:00.779Z
+Response:
+{
+  "user": {
+    "id": 96,
+    "username": "barbara_simonis19",
+    "name": "Lila MacGyver",
+    "role": "USER",
+    "isEmailVerified": true,
+    "createdAt": "2026-01-06T12:01:00.728Z",
+    "updatedAt": "2026-01-06T12:01:00.728Z",
+    "departmentId": null,
+    "signatureImage": null,
+    "digitalCert": null,
+    "phone": null
+  },
+  "tokens": {
+    "access": {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjk2LCJpYXQiOjE3Njc3MDA4NjAsImV4cCI6MTc3MDI5Mjg2MCwidHlwZSI6IkFDQ0VTUyJ9.uc5sPPglOnlEoMvJcdItXgqY2yOPLPFH1kgLzT1Mcu4",
+      "expires": "2026-02-05T12:01:00.770Z"
+    }
+  }
+}
+========================================

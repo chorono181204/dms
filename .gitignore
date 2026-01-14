@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS settings
+.DS_Store
+Thumbs.db
+
+# IDE Files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build outputs
+dist/
+dist-electron/
+release/
+build/
+out/
+
+# Environment Inputs
+.env
+.env.*
+!.env.example
+
+# Client specific
+client/dist
+client/dist-electron
+client/release
+
+# Server specific
+server/dist
+server/build
+server/coverage
+server/uploads
+server/db
+
+
+# Test coverage
+coverage/
+
+# Temporary files
+*.tmp
+*.temp

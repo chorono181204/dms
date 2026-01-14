@@ -1,0 +1,235 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// 1. Tổ chức & Người dùng
+model Department {
+  id                Int               @id @default(autoincrement())
+  name              String
+  code              String            @unique // Mã khoa/phòng (KHS, KKB...)
+  users             User[]
+  templates         Template[]
+  documents         Document[]
+  categories        Category[]
+  signatures        Signature[]
+  documentHistories DocumentHistory[]
+
+  createdBy String? // Username or Name
+  updatedBy String?
+}
+
+model User {
+  id              Int         @id @default(autoincrement())
+  name            String? // fullName
+  username        String      @unique
+  password        String
+  role            String      @default("USER") // USER, MANAGER, ADMIN
+  isEmailVerified Boolean     @default(true)
+  phone           String?
+  position        String? // Chức vụ (Trưởng khoa, Nhân viên...)
+  // Quan hệ tổ chức
+  departmentId    Int?
+  department      Department? @relation(fields: [departmentId], references: [id])
+
+  // Thông tin chữ ký
+  signatureImage String? // URL ảnh chữ ký mặc định
+  digitalCert    String? // Serial number của chứng thư số
+
+  // Quan hệ văn bản - REMOVED RELATIONS TO DECOUPLE
+  permissions DocumentPermission[]
+
+  // Auth
+  // Token relation removed
+
+  // Audit
+  createdBy         String?
+  updatedBy         String?
+  signatureRequests SignatureRequest[]
+}
+
+// 2. Mẫu văn bản
+model Template {
+  id      Int    @id @default(autoincrement())
+  name    String
+  content String // HTML/JSON content
+
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  // Data Isolation: Mẫu thuộc phòng ban nào
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  isActive Boolean @default(true)
+
+  createdBy String?
+  updatedBy String?
+}
+
+// 2.1 Danh mục tài liệu
+model Category {
+  id          Int     @id @default(autoincrement())
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  documents Document[]
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  createdBy String?
+  updatedBy String?
+  templates Template[]
+}
+
+// 3. Văn bản & Dữ liệu
+model Document {
+  id      Int     @id @default(autoincrement())
+  code    String? @unique // Số văn bản / Mã hồ sơ
+  title   String
+  content String // Nội dung HTML/JSON
+
+  status String @default("DRAFT") // DRAFT, PENDING, APPROVED, SIGNED, REJECTED, ARCHIVED
+
+  // Data Isolation: Văn bản thuộc về phòng ban nào
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  // Người tạo - CHANGED TO STRING
+  createdBy String // Username
+  updatedBy String?
+
+  // Phân quyền nâng cao: Google Docs Style
+  visibility  String @default("PRIVATE") // PRIVATE (Chỉ tôi), DEPARTMENT (Khoa/Phòng), PUBLIC (Cả bệnh viện)
+  accessLevel String @default("VIEW") // VIEW (Chỉ xem), EDIT (Được sửa) - Áp dụng khi Public/Department
+
+  // Phân quyền chi tiết: Ai được làm gì với văn bản này?
+  permissions DocumentPermission[]
+
+  // Dữ liệu ký
+  signatures Signature[]
+  history    DocumentHistory[]
+
+  // Version control
+  currentVersion Int               @default(1)
+  versions       DocumentVersion[]
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  signatureRequests SignatureRequest[]
+}
+
+// 3.1 Document Version Control
+model DocumentVersion {
+  id         Int      @id @default(autoincrement())
+  documentId Int
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  versionNumber Int
+  filePath      String
+  fileSize      Int
+  changeNote    String?
+
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+}
+
+// Bảng phân quyền (Thay thế Workflow)
+// Still needs User link for login access
+model DocumentPermission {
+  id Int @id @default(autoincrement())
+
+  documentId Int
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Quyền: "VIEW", "EDIT", "SIGN", "APPROVE"
+  permission String
+
+  createdBy String?
+  updatedBy String?
+
+  @@unique([documentId, userId, permission])
+}
+
+// 4. Chữ ký & Lịch sử
+model Signature {
+  id         Int      @id @default(autoincrement())
+  documentId Int
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  // CHANGED TO STRING
+  signedBy String // Username/Name of signer
+
+  step Int // Ký ở bước nào (hoặc thứ tự ký)
+  type String // IMAGE, DIGITAL, OTP
+
+  // Metadata
+  comment        String?
+  hash           String?
+  signatureValue String?
+
+  // Audit
+  createdBy String?
+  updatedBy String?
+
+  // Data Isolation
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+}
+
+model DocumentHistory {
+  id         Int      @id @default(autoincrement())
+  documentId Int
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  // CHANGED TO STRING
+  createdBy String? // Username of actor
+
+  action      String // CREATED, UPDATED, SUBMITTED...
+  description String?
+
+  updatedBy String?
+
+  // Data Isolation
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+}
+
+// 5. Quy trình trình ký
+model SignatureRequest {
+  id Int @id @default(autoincrement())
+
+  documentId Int
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  status String @default("PENDING") // PENDING, SIGNED, REJECTED
+
+  requestedAt DateTime  @default(now())
+  signedAt    DateTime?
+  note        String? // Ghi chú từ người gửi hoặc phản hồi
+
+  @@unique([documentId, userId])
+}
