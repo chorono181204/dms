@@ -5,7 +5,7 @@ import ApiError from '../utils/ApiError';
 
 const createSignatureRequest = catchAsync(async (req, res) => {
     const { documentId } = req.params;
-    const { userIds, note } = req.body; // userIds: number[]
+    const { signers, note } = req.body; // signers: { userId: number, step?: number, note?: string }[]
     const documentIdInt = parseInt(documentId);
 
     // 1. Check Document
@@ -33,14 +33,27 @@ const createSignatureRequest = catchAsync(async (req, res) => {
     }
 
     // 3. Create Requests
-    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+    // Normalize input: backward compatibility for userIds array?
+    // If req.body.userIds present and Signers not, convert.
+    let signerList = [];
+    if (signers && Array.isArray(signers)) {
+        signerList = signers;
+    } else if (req.body.userIds && Array.isArray(req.body.userIds)) {
+        signerList = req.body.userIds.map((uid: number) => ({ userId: uid, step: 1 }));
+    }
+
+    if (signerList.length === 0) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Please select users to sign');
     }
 
     const requestsCreated = [];
 
     // Explicit loop to handle unique constraints gracefully
-    for (const targetUserId of userIds) {
+    for (const signer of signerList) {
+        const targetUserId = signer.userId;
+        const step = signer.step || 1;
+        const personalNote = signer.note || note; // Use specific note or general note
+
         // Prevent requesting yourself? Maybe allowed for self-signing flow tracking?
         // if (targetUserId === user.id) continue;
 
@@ -59,7 +72,8 @@ const createSignatureRequest = catchAsync(async (req, res) => {
                     documentId: documentIdInt,
                     userId: targetUserId,
                     status: 'PENDING',
-                    note: note
+                    step: step,
+                    note: personalNote
                 }
             });
             requestsCreated.push(newReq);
@@ -67,7 +81,19 @@ const createSignatureRequest = catchAsync(async (req, res) => {
             // Re-open rejected request?
             const updated = await prisma.signatureRequest.update({
                 where: { id: existing.id },
-                data: { status: 'PENDING', note: note, signedAt: null }
+                data: {
+                    status: 'PENDING',
+                    step: step,
+                    note: personalNote,
+                    signedAt: null
+                }
+            });
+            requestsCreated.push(updated);
+        } else {
+            // Update step if already exists and pending
+            const updated = await prisma.signatureRequest.update({
+                where: { id: existing.id },
+                data: { step: step, note: personalNote }
             });
             requestsCreated.push(updated);
         }
@@ -79,7 +105,8 @@ const createSignatureRequest = catchAsync(async (req, res) => {
 const getPendingSignatures = catchAsync(async (req, res) => {
     const user = req.user as any;
 
-    const requests = await prisma.signatureRequest.findMany({
+    // Fetch all pending requests for me
+    const myRequests = await prisma.signatureRequest.findMany({
         where: {
             userId: user.id,
             status: 'PENDING'
@@ -90,34 +117,37 @@ const getPendingSignatures = catchAsync(async (req, res) => {
                     id: true,
                     title: true,
                     code: true,
-                    content: true, // File path - CRITICAL for signing
+                    content: true,
                     status: true,
                     createdBy: true,
                     createdAt: true,
-                    department: {
-                        select: {
-                            id: true,
-                            name: true
-                        }
-                    },
-                    category: {
-                        select: {
-                            id: true,
-                            name: true
-                        }
-                    }
+                    department: { select: { id: true, name: true } },
+                    category: { select: { id: true, name: true } }
                 }
             },
-            user: {
-                select: { id: true, name: true, username: true }
-            }
+            user: { select: { id: true, name: true, username: true } }
         },
-        orderBy: {
-            requestedAt: 'desc'
-        }
+        orderBy: { requestedAt: 'desc' }
     });
 
-    res.send(requests);
+    // Check sequential steps
+    const validRequests = [];
+    for (const req of myRequests) {
+        // Find if there are any pending requests for the same document with a LOWER step
+        const blockingRequests = await prisma.signatureRequest.findFirst({
+            where: {
+                documentId: req.documentId,
+                step: { lt: req.step }, // Step < My Step
+                status: 'PENDING'       // And still Pending
+            }
+        });
+
+        if (!blockingRequests) {
+            validRequests.push(req);
+        }
+    }
+
+    res.send(validRequests);
 });
 
 const getSignatureHistory = catchAsync(async (req, res) => {

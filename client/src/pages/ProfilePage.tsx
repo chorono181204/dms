@@ -12,15 +12,18 @@ import {
   Avatar,
   Skeleton,
   Upload,
-  Space, // Added Space back as it's used later
-  Tabs, // Added Tabs back as it's used later
+  Space,
+  Tabs,
+  Switch, // Added Switch for settings
 } from 'antd'
 import {
   UserOutlined,
   LockOutlined,
   SaveOutlined,
   UploadOutlined,
-  EditOutlined, // Added EditOutlined back as it's used later
+  EditOutlined,
+  PlusOutlined,
+  BellOutlined, // Added BellOutlined for settings tab
 } from '@ant-design/icons'
 import { getBackendUrl } from '../utils/config';
 import userService from '../services/user.service'
@@ -42,6 +45,19 @@ export default function ProfilePage() {
   const [signatureLoading, setSignatureLoading] = useState(false)
   const [cropModalVisible, setCropModalVisible] = useState(false)
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null)
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    return localStorage.getItem('chat_notification_sound') !== 'false'
+  })
+
+  const handleSoundToggle = (checked: boolean) => {
+    setSoundEnabled(checked)
+    localStorage.setItem('chat_notification_sound', checked ? 'true' : 'false')
+    if (checked) {
+      message.success('Đã bật âm thanh thông báo')
+    } else {
+      message.info('Đã tắt âm thanh thông báo')
+    }
+  }
 
   useEffect(() => {
     fetchProfile()
@@ -294,12 +310,38 @@ export default function ProfilePage() {
                             <div style={{ padding: 16, border: '1px dashed #d9d9d9', borderRadius: 8, textAlign: 'center' }}>
                               <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>Xem trước chữ ký:</Typography.Text>
                               <img
-                                src={`${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(user.signatureImage)}&inline=true`}
+                                src={`${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(user.signatureImage)}&inline=true&token=${localStorage.getItem('accessToken')}`}
                                 alt="signature-preview"
                                 style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain' }}
                               />
                             </div>
                           )}
+                        </Col>
+                      </Row>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'settings',
+                  label: 'Cài đặt',
+                  children: (
+                    <div style={{ padding: '20px 0' }}>
+                      <Title level={5}>Cài đặt thông báo</Title>
+                      <Divider style={{ margin: '12px 0' }} />
+                      <Row align="middle" justify="space-between">
+                        <Col>
+                          <Space direction="vertical" size={0}>
+                            <Typography.Text strong>Âm thanh thông báo</Typography.Text>
+                            <Typography.Text type="secondary" style={{ fontSize: 13 }}>Phát âm thanh khi có tin nhắn mới</Typography.Text>
+                          </Space>
+                        </Col>
+                        <Col>
+                          <Switch
+                            checked={soundEnabled}
+                            onChange={handleSoundToggle}
+                            checkedChildren="Bật"
+                            unCheckedChildren="Tắt"
+                          />
                         </Col>
                       </Row>
                     </div>

@@ -24,14 +24,37 @@ const createUser = catchAsync(async (req: Request, res: Response, next: NextFunc
 
 const getUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
   const filter = pick(req.query, ['name', 'role', 'departmentId']);
+  if (filter.name) {
+    filter.name = { contains: filter.name };
+  }
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
 
   const user = req.user as any; // Cast to any to access role and departmentId
-  if (user.role !== 'ADMIN') {
-    if (user.departmentId) {
-      Object.assign(filter, { departmentId: user.departmentId });
+  /*
+   * Allow non-admin users to view all users IF 'scope=all' is passed (for Sharing feature).
+   * Otherwise, restrict to their own department.
+   */
+  const allowAll = req.query.scope === 'all';
+  if (user.role !== 'ADMIN' && !allowAll) {
+    if (user.department?.isSupervisory) {
+      // Supervisor: Can see all departments, but exclude ADMINs.
+      // Respect filter.departmentId if passed by frontend (e.g. SettingsPage).
+      const existingAnd = Array.isArray(filter.AND) ? filter.AND : (filter.AND ? [filter.AND] : []);
+      filter.AND = [...existingAnd, { role: { not: 'ADMIN' } }];
     } else {
-      Object.assign(filter, { departmentId: -1 }); // specific impossible ID
+      // Normal: Restrict to own department
+      if (user.departmentId) {
+        Object.assign(filter, { departmentId: user.departmentId });
+      } else {
+        // If no department assigned/found, restrict to impossible ID to show no users
+        Object.assign(filter, { departmentId: -1 });
+      }
+    }
+  } else {
+    // Explicitly remove departmentId from filter if scope=all, to ensure we get ALL users
+    // even if frontend accidentally sends departmentId
+    if (allowAll) {
+      delete filter.departmentId;
     }
   }
 

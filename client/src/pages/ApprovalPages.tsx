@@ -105,7 +105,7 @@ export default function ApprovalPages({ type }: ApprovalPageProps) {
             title: item.title,
             category: item.category?.name || '---',
             department: item.department?.name || '---',
-            owner: item.createdBy,
+            owner: item.createdByName || item.createdBy,
             requestedAt: new Date(item.updatedAt).toLocaleString(),
             status: item.status,
             note: item.description || '',
@@ -124,7 +124,7 @@ export default function ApprovalPages({ type }: ApprovalPageProps) {
           title: doc.title,
           category: doc.category?.name || '---',
           department: doc.department?.name || '---',
-          owner: doc.createdBy,
+          owner: doc.createdByName || doc.createdBy,
           requestedAt: isSignatureHistory
             ? new Date(item.requestedAt).toLocaleString()
             : new Date(doc.updatedAt).toLocaleString(),
@@ -514,7 +514,7 @@ export default function ApprovalPages({ type }: ApprovalPageProps) {
       <PDFSignatureModal
         visible={signatureModalVisible}
         pdfUrl={signaturePdfUrl}
-        signatureImageUrl={user?.signatureImage ? `${getBackendUrl()}/v1/upload/download?path=` + encodeURIComponent(user.signatureImage) + '&inline=true' : ''}
+        signatureImageUrl={user?.signatureImage ? `${getBackendUrl()}/v1/upload/download?path=` + encodeURIComponent(user.signatureImage) + '&inline=true&token=' + localStorage.getItem('accessToken') : ''}
         documentTitle={signatureDocTitle}
         userName={user?.name || user?.username || ''}
         userPosition={user?.position || user?.role || ''}

@@ -16,6 +16,8 @@ import {
   message,
   Tabs,
   Upload,
+  Radio,
+  Skeleton,
 } from 'antd'
 import {
   SearchOutlined,
@@ -30,7 +32,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import userService from '../services/user.service'
 import departmentService from '../services/department.service'
-import * as categoryService from '../api/services/category.service'
+
 import { useAuth } from '../contexts/AuthContext'
 import { useEffect } from 'react'
 import { processSignatureImage } from '../utils/imageUtils'
@@ -84,7 +86,7 @@ const roleLabels: Record<string, string> = {
 }
 
 interface SettingsPageProps {
-  type: 'users' | 'doc-types' | 'integration' | 'departments'
+  type: 'users' | 'integration' | 'departments'
 }
 
 export default function SettingsPages({ type }: SettingsPageProps) {
@@ -97,8 +99,7 @@ export default function SettingsPages({ type }: SettingsPageProps) {
     switch (type) {
       case 'users':
         return 'Người dùng & phân quyền'
-      case 'doc-types':
-        return 'Loại tài liệu & quy trình'
+
       case 'departments':
         return 'Quản lý khoa/phòng'
       case 'integration':
@@ -114,8 +115,7 @@ export default function SettingsPages({ type }: SettingsPageProps) {
         return 'Quản lý tài khoản, vai trò và quyền truy cập tài liệu.'
       case 'departments':
         return 'Quản lý danh sách khoa/phòng ban trong bệnh viện.'
-      case 'doc-types':
-        return 'Cấu hình nhóm tài liệu và quy trình phê duyệt tương ứng.'
+
       case 'integration':
         return 'Thiết lập nhà cung cấp chữ ký số và kết nối với hệ thống HIS.'
       default:
@@ -129,8 +129,6 @@ export default function SettingsPages({ type }: SettingsPageProps) {
   const [signatureLoading, setSignatureLoading] = useState(false)
   const [departments, setDepartments] = useState<any[]>([])
 
-  // State for Categories
-  const [categories, setCategories] = useState<any[]>([])
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 10,
@@ -142,8 +140,12 @@ export default function SettingsPages({ type }: SettingsPageProps) {
     setLoading(true)
     try {
       const params: any = { page, limit: pageSize }
-      if (search) params.name = search // Using 'name' for search as per service, backend supports name filtering on list? Need to check backend service logic. 
-      // Checking user.service.ts: queryUsers filters by name or role. Good.
+      if (search) params.name = search
+
+      // Strict Department Filtering for Non-Admins (Managers/Supervisors restricted to own dept in Settings)
+      if (currentUser?.role !== 'ADMIN' && currentUser?.departmentId) {
+        params.departmentId = currentUser.departmentId;
+      }
 
       const data = await userService.getUsers(params)
       setUsers(data.results)
@@ -169,22 +171,7 @@ export default function SettingsPages({ type }: SettingsPageProps) {
     }
   }
 
-  // Fetch Categories
-  const fetchCategories = async (page = 1, pageSize = 10, search = '') => {
-    setLoading(true)
-    try {
-      const params: any = { page, limit: pageSize }
-      if (search) params.name = search
 
-      const data = await categoryService.getCategories(params)
-      setCategories(data.results)
-      // Category pagination logic if needed
-    } catch (error) {
-      message.error('Lỗi tải danh mục')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   useEffect(() => {
     if (type === 'users') {
@@ -194,10 +181,7 @@ export default function SettingsPages({ type }: SettingsPageProps) {
     if (type === 'departments') {
       fetchDepartments()
     }
-    if (type === 'doc-types') {
-      fetchCategories(1, 10, searchText);
-      fetchDepartments(); // For dropdown in modal
-    }
+
   }, [type, searchText]) // Reload when search changes. Ideally should debounce.
 
   // Handle Table Change (Pagination)
@@ -242,6 +226,7 @@ export default function SettingsPages({ type }: SettingsPageProps) {
       role: record.role,
       departmentId: record.departmentId || record.department?.id, // Handle both if API returns nested or flat
       position: record.position,
+      isChief: record.isChief,
       signatureImage: record.signatureImage
     })
     setIsModalVisible(true)
@@ -305,6 +290,13 @@ export default function SettingsPages({ type }: SettingsPageProps) {
         render: (role: string) => (
           <Tag color={roleColors[role]} > {roleLabels[role]}</Tag >
         ),
+      },
+      {
+        title: 'KTV Trưởng',
+        dataIndex: 'isChief',
+        key: 'isChief',
+        width: 100,
+        render: (isChief: boolean) => isChief ? <Tag color="gold">KTV Trưởng</Tag> : null,
       },
       {
         title: 'Tạo bởi',
@@ -464,6 +456,10 @@ export default function SettingsPages({ type }: SettingsPageProps) {
               label="Chức vụ"
             >
               <Input placeholder="Nhập chức vụ (Ví dụ: Trưởng khoa)" />
+            </Form.Item>
+
+            <Form.Item name="isChief" valuePropName="checked">
+              <Switch /> <span style={{ marginLeft: 8 }}>KTV Trưởng (Quyền giao việc cho nhân viên)</span>
             </Form.Item>
 
             <Form.Item
@@ -666,221 +662,11 @@ export default function SettingsPages({ type }: SettingsPageProps) {
             </Form.Item>
           </Form>
         </Modal>
-      </div>
+      </div >
     );
   }
 
-  if (type === 'doc-types') {
 
-    const handleSaveCategory = async () => {
-      try {
-        const values = await form.validateFields();
-        if (editingUserId) {
-          await categoryService.updateCategory(editingUserId, values);
-          message.success('Cập nhật danh mục thành công');
-        } else {
-          await categoryService.createCategory(values);
-          message.success('Thêm danh mục thành công');
-        }
-        setIsModalVisible(false);
-        form.resetFields();
-        setEditingUserId(null);
-        fetchCategories();
-      } catch (error: any) {
-        message.error(error.response?.data?.message || 'Lỗi lưu danh mục');
-      }
-    };
-
-    const handleDeleteCategory = (id: number) => {
-      Modal.confirm({
-        title: 'Xóa danh mục',
-        content: 'Bạn có chắc chắn muốn xóa danh mục này? Các tài liệu liên quan sẽ bị ảnh hưởng.',
-        onOk: async () => {
-          try {
-            await categoryService.deleteCategory(id);
-            message.success('Đã xóa thành công');
-            fetchCategories();
-          } catch (error) {
-            message.error('Lỗi xóa danh mục');
-          }
-        }
-      });
-    };
-
-    const categoryColumns: ColumnsType<any> = [
-      {
-        title: 'Tên loại',
-        dataIndex: 'name',
-        key: 'name',
-        width: 200,
-      },
-      {
-        title: 'Mô tả',
-        dataIndex: 'description',
-        key: 'description',
-        width: 300,
-        ellipsis: true,
-      },
-      {
-        title: 'Khoa',
-        key: 'department',
-        width: 150,
-        render: (_, record) => record.department?.name || '---',
-      },
-      {
-        title: 'Trạng thái',
-        dataIndex: 'isActive',
-        key: 'isActive',
-        width: 100,
-        render: (isActive: boolean) => (
-          <Tag color={isActive ? 'success' : 'default'}>
-            {isActive ? 'Hoạt động' : 'Tắt'}
-          </Tag>
-        ),
-      },
-      {
-        title: 'Tạo bởi',
-        dataIndex: 'createdBy',
-        key: 'createdBy',
-        width: 120,
-      },
-      {
-        title: 'Cập nhật bởi',
-        dataIndex: 'updatedBy',
-        key: 'updatedBy',
-        width: 120,
-        render: (text) => <span style={{ color: '#888' }}>{text || '---'}</span>
-      },
-      {
-        title: 'Thao tác',
-        key: 'action',
-        width: 150,
-        fixed: 'right',
-        render: (_, record) => {
-          const isAdmin = currentUser?.role === 'ADMIN';
-          const isManager = currentUser?.role === 'MANAGER';
-          const isOwner = record.createdBy === currentUser?.username;
-          const canAction = isAdmin || isManager || isOwner;
-
-          return (
-            <Space size="small">
-              <Button
-                type="link"
-                icon={<EditOutlined />}
-                size="small"
-                disabled={!canAction}
-                onClick={() => {
-                  setEditingUserId(record.id);
-                  form.setFieldsValue({
-                    name: record.name,
-                    description: record.description,
-                    departmentId: record.departmentId,
-                    isActive: record.isActive
-                  });
-                  setIsModalVisible(true);
-                }}
-              >
-                Sửa
-              </Button>
-              <Button
-                type="link"
-                danger
-                icon={<DeleteOutlined />}
-                size="small"
-                disabled={!canAction}
-                onClick={() => handleDeleteCategory(record.id)}
-              >
-                Xóa
-              </Button>
-            </Space>
-          );
-        },
-      },
-    ]
-
-    return (
-      <div>
-        <Title level={3}>{getTitle()}</Title>
-
-        <Card style={{ marginBottom: 16 }}>
-          <Row gutter={[16, 16]} justify="space-between" align="middle">
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Input
-                placeholder="Tìm kiếm danh mục..."
-                prefix={<SearchOutlined />}
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                allowClear
-              />
-            </Col>
-            <Col>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => {
-                setIsModalVisible(true);
-                if (currentUser?.role !== 'ADMIN' && currentUser?.departmentId) {
-                  form.setFieldsValue({ departmentId: currentUser.departmentId });
-                }
-              }}>
-                Thêm danh mục
-              </Button>
-            </Col>
-          </Row>
-        </Card>
-
-        <Card>
-          <Table
-            columns={categoryColumns}
-            dataSource={categories}
-            rowKey="id"
-            scroll={{ x: 1000 }}
-            loading={loading}
-            pagination={{
-              pageSize: 10,
-              showSizeChanger: true,
-              showTotal: (total) => `Tổng ${total} loại`,
-            }}
-          />
-        </Card>
-
-        <Modal
-          title={editingUserId ? "Cập nhật danh mục" : "Thêm danh mục mới"}
-          open={isModalVisible}
-          onOk={handleSaveCategory}
-          onCancel={() => {
-            setIsModalVisible(false)
-            form.resetFields()
-            setEditingUserId(null)
-          }}
-          width={600}
-        >
-          <Form form={form} layout="vertical">
-            <Form.Item
-              name="name"
-              label="Tên danh mục"
-              rules={[{ required: true, message: 'Vui lòng nhập tên danh mục' }]}
-            >
-              <Input placeholder="Nhập tên danh mục" />
-            </Form.Item>
-            <Form.Item name="description" label="Mô tả">
-              <Input.TextArea rows={3} placeholder="Nhập mô tả" />
-            </Form.Item>
-            <Form.Item
-              name="departmentId"
-              label="Khoa"
-            >
-              <Select placeholder="Chọn khoa (nếu áp dụng)" allowClear disabled={currentUser?.role !== 'ADMIN'}>
-                {departments.map(dept => (
-                  <Select.Option key={dept.id} value={dept.id}>{dept.name}</Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-            <Form.Item name="isActive" valuePropName="checked" initialValue={true}>
-              <Switch checkedChildren="Hoạt động" unCheckedChildren="Tắt" />
-            </Form.Item>
-          </Form>
-        </Modal>
-      </div>
-    )
-  }
 
   // integration
   return (

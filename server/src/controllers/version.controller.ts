@@ -153,7 +153,8 @@ export const restoreVersion = async (req: Request, res: Response) => {
         newFilePath,
         stats.size,
         `Restored from version ${versionNumber}`,
-        user.username
+        user.username,
+        user.name || user.username
     );
 
     // Update document currentVersion and content (filePath)

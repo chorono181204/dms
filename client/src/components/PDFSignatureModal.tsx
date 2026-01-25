@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Modal, Button, message, Slider, Spin, Select, Switch } from 'antd';
+import { Modal, Button, message, Slider, Spin, Select, Switch, DatePicker } from 'antd';
 import { PlusOutlined, DeleteOutlined, LoadingOutlined } from '@ant-design/icons';
 import Draggable from 'react-draggable';
 import { Document, Page, pdfjs } from 'react-pdf';
+import dayjs from 'dayjs';
 import { embedSignatureInPdf, pdfBytesToBlob } from '../utils/pdfUtils';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -61,6 +62,8 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
     });
 
     const [includeInfo, setIncludeInfo] = useState(true);
+    const [includeDate, setIncludeDate] = useState(true);
+    const [signDate, setSignDate] = useState(dayjs());
 
     const [textFont, setTextFont] = useState(() => {
         return localStorage.getItem(STORAGE_KEYS.FONT) || 'Times New Roman'; // Default Times New Roman
@@ -205,10 +208,11 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                     signatureImageUrl,
                     sig.width,
                     sig.height,
-                    includeInfo ? userName : undefined, // Check toggle
-                    includeInfo ? userPosition : undefined, // Check toggle
-                    textFont, // New param
-                    textSize // New param
+                    includeInfo ? userName : undefined,
+                    includeInfo ? userPosition : undefined,
+                    includeDate && signDate ? signDate.format('HH:mm DD/MM/YYYY') : undefined, // Check toggle and pass date
+                    textFont,
+                    textSize
                 ));
 
                 const compositeImg = new Image();
@@ -423,6 +427,19 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                                         ({userPosition})
                                                     </div>
                                                 )}
+                                                {includeDate && signDate && (
+                                                    <div style={{
+                                                        fontSize: textSize * 0.65,
+                                                        fontFamily: textFont,
+                                                        color: '#000000',
+                                                        marginTop: 1,
+                                                        textAlign: 'center',
+                                                        lineHeight: '1.2',
+                                                        fontStyle: 'italic'
+                                                    }}>
+                                                        {signDate.format('HH:mm DD/MM/YYYY')}
+                                                    </div>
+                                                )}
                                             </div>
                                         </Draggable>
                                     ))}
@@ -505,14 +522,31 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                             padding: 12,
                             backgroundColor: '#fff',
                             marginBottom: 16,
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
                         }}>
-                            <span style={{ fontSize: 12, fontWeight: 500, color: '#666' }}>
-                                Kèm thông tin (Họ tên/Chức vụ):
-                            </span>
-                            <Switch size="small" checked={includeInfo} onChange={setIncludeInfo} />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <span style={{ fontSize: 12, fontWeight: 500, color: '#666' }}>
+                                    Kèm thông tin (Họ tên/Chức vụ):
+                                </span>
+                                <Switch size="small" checked={includeInfo} onChange={setIncludeInfo} />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <span style={{ fontSize: 12, fontWeight: 500, color: '#666' }}>
+                                    Kèm ngày ký:
+                                </span>
+                                <Switch size="small" checked={includeDate} onChange={setIncludeDate} />
+                            </div>
+                            {includeDate && (
+                                <div style={{ marginTop: 8 }}>
+                                    <DatePicker
+                                        showTime
+                                        format="HH:mm DD/MM/YYYY"
+                                        value={signDate}
+                                        onChange={(date) => setSignDate(date || dayjs())}
+                                        style={{ width: '100%' }}
+                                        allowClear={false}
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         {/* Signature Preview Card */}
@@ -554,6 +588,9 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                 )}
                                 {includeInfo && userPosition && (
                                     <div style={{ fontFamily: textFont, fontSize: textSize * 0.85, color: '#666' }}>({userPosition})</div>
+                                )}
+                                {includeDate && signDate && (
+                                    <div style={{ fontFamily: textFont, fontSize: textSize * 0.75, color: '#000000', fontStyle: 'italic', marginTop: 2 }}>{signDate.format('HH:mm DD/MM/YYYY')}</div>
                                 )}
                             </div>
                         </div>

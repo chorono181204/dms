@@ -4,10 +4,36 @@ import prisma from './client';
 import config from './config/config';
 import logger from './config/logger';
 
+import { initCleanupTask } from './tasks/cleanup.task';
+
+import { createServer } from 'http';
+import { Server as SocketServer, Socket } from 'socket.io';
+
 let server: Server;
+const httpServer = createServer(app);
+export const io = new SocketServer(httpServer, {
+  cors: {
+    origin: '*',
+  }
+});
+
+io.on('connection', (socket: Socket) => {
+  // Client sends userId upon connection (simple auth for now)
+  const userId = socket.handshake.query.userId;
+  if (userId) {
+    socket.join(`user_${userId}`);
+    logger.info(`User connected: ${userId}`);
+  }
+
+  socket.on('disconnect', () => {
+    // console.log('Client disconnected');
+  });
+});
+
 prisma.$connect().then(() => {
   logger.info('Connected to SQL Database');
-  server = app.listen(config.port, () => {
+  initCleanupTask();
+  server = httpServer.listen(config.port, () => {
     logger.info(`Listening to port ${config.port}`);
   });
 });

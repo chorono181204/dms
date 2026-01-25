@@ -24,3 +24,19 @@ export const getCategory = async (id: number | string) => {
     const response = await client.get(`/categories/${id}`);
     return response.data;
 };
+
+// Hierarchical category operations
+export const getCategoryContents = async (categoryId: number | string, params?: any) => {
+    const response = await client.get(`/categories/${categoryId}/contents`, { params });
+    return response.data;
+};
+
+export const getCategoryBreadcrumbs = async (categoryId: number | string) => {
+    const response = await client.get(`/categories/${categoryId}/breadcrumbs`);
+    return response.data;
+};
+
+export const moveCategory = async (categoryId: number | string, data: { newParentId: number | string | null }) => {
+    const response = await client.post(`/categories/${categoryId}/move`, data);
+    return response.data;
+};

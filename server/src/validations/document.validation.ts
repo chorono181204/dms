@@ -10,6 +10,8 @@ const createDocument = {
         status: Joi.string().valid('DRAFT', 'PENDING', 'APPROVED', 'SIGNED', 'REJECTED', 'ARCHIVED').default('DRAFT'),
         visibility: Joi.string().valid('PRIVATE', 'DEPARTMENT', 'PUBLIC').default('PRIVATE'),
         accessLevel: Joi.string().valid('VIEW', 'EDIT').default('VIEW'),
+        effectiveDate: Joi.date().allow(null),
+        expirationDate: Joi.date().allow(null),
     }).unknown(true),
 };
 
@@ -24,6 +26,12 @@ const getDocuments = {
         sortBy: Joi.string(),
         limit: Joi.number().integer(),
         page: Joi.number().integer(),
+        visibility: Joi.string(),
+        // Date filters
+        effectiveDateStart: Joi.date(),
+        effectiveDateEnd: Joi.date(),
+        expirationDateStart: Joi.date(),
+        expirationDateEnd: Joi.date(),
     }),
 };
 
@@ -47,6 +55,8 @@ const updateDocument = {
             categoryId: Joi.number().allow(null),
             visibility: Joi.string().valid('PRIVATE', 'DEPARTMENT', 'PUBLIC'),
             accessLevel: Joi.string().valid('VIEW', 'EDIT'),
+            effectiveDate: Joi.date().allow(null),
+            expirationDate: Joi.date().allow(null),
         })
         .min(1)
         .unknown(true),

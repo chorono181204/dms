@@ -9,7 +9,8 @@ const createUser = {
     name: Joi.string().required(),
     role: Joi.string().required().valid(Role.USER, Role.MANAGER, Role.ADMIN),
     departmentId: Joi.number().integer().required(),
-    position: Joi.string().allow(null, '')
+    position: Joi.string().allow(null, ''),
+    isChief: Joi.boolean()
   })
 };
 
@@ -21,6 +22,7 @@ const getUsers = {
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
     departmentId: Joi.number().integer(), // Allow departmentId for filtering (injected by scope or manually passed)
+    scope: Joi.string()
   })
 };
 
@@ -41,7 +43,8 @@ const updateUser = {
       name: Joi.string(),
       role: Joi.string(),
       departmentId: Joi.number().integer(),
-      position: Joi.string().allow(null, '')
+      position: Joi.string().allow(null, ''),
+      isChief: Joi.boolean()
     })
     .min(1)
 };

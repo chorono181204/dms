@@ -121,7 +121,7 @@ export default function TemplateManagementPage() {
 
     const handleView = (record: Template) => {
         if (record.content && record.content.includes('G:\\')) {
-            const viewUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(record.content)}&inline=true`;
+            const viewUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(record.content)}&inline=true&token=${localStorage.getItem('accessToken')}`;
 
             const ext = record.content.split('.').pop() || '';
             const fullFileName = record.name.toLocaleLowerCase().endsWith(ext.toLowerCase())
@@ -207,7 +207,7 @@ export default function TemplateManagementPage() {
                             icon={<DownloadOutlined />}
                             onClick={() => {
                                 if (record.content && record.content.includes('G:\\')) {
-                                    const downloadUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(record.content)}`;
+                                    const downloadUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(record.content)}&token=${localStorage.getItem('accessToken')}`;
                                     window.location.href = downloadUrl;
                                 } else {
                                     message.warning('File không tồn tại');
@@ -295,7 +295,7 @@ export default function TemplateManagementPage() {
 
             <FilePreviewModal
                 visible={previewVisible}
-                onCancel={() => setPreviewVisible(false)}
+                onClose={() => setPreviewVisible(false)}
                 fileUrl={previewUrl}
                 fileName={previewName}
             />

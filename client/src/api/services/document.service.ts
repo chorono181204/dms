@@ -68,3 +68,22 @@ export const getApprovalHistory = async () => {
     const response = await client.get(`${endpoint}/history-approvals`);
     return response.data;
 };
+export const getDashboardStats = async () => {
+    const response = await client.get(`${endpoint}/dashboard-stats`);
+    return response.data;
+};
+
+export const getTrashedDocuments = async (params: any) => {
+    const response = await client.get(`${endpoint}/trash`, { params });
+    return response.data;
+};
+
+export const restoreDocument = async (id: number) => {
+    const response = await client.post(`${endpoint}/${id}/restore`);
+    return response.data;
+};
+
+export const permanentlyDeleteDocument = async (id: number) => {
+    const response = await client.delete(`${endpoint}/${id}/permanent`);
+    return response.data;
+};

@@ -137,7 +137,7 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <Text type="secondary" style={{ fontSize: '10px' }}>
                                             <span style={{ marginRight: 4 }}>Bởi:</span>
-                                            {version.createdBy}
+                                            {version.createdByName || version.createdBy}
                                         </Text>
 
                                         <div style={{ display: 'flex', gap: 4 }}>

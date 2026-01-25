@@ -8,4 +8,9 @@ export const password: Joi.CustomValidator<string> = (value, helpers) => {
     return helpers.error('password must contain at least 1 letter and 1 number');
   }
   return value;
+  return value;
+};
+
+export default {
+  password,
 };

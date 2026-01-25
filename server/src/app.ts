@@ -52,9 +52,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// sanitize request data
-app.use(xss());
-
 // gzip compression
 app.use(compression());
 

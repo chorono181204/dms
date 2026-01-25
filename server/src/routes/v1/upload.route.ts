@@ -14,8 +14,12 @@ router.post(
 
 router.get(
     '/download',
-    // auth(), // Should be authenticated to download? Yes.
     uploadController.downloadFile
+);
+
+router.get(
+    '/view',
+    uploadController.viewFile
 );
 
 export default router;

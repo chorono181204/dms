@@ -33,7 +33,8 @@ const loginUserWithUsernameAndPassword = async (
     'signatureImage',
     'digitalCert',
     'phone',
-    'position'
+    'position',
+    'isChief'
   ]);
   if (!user || !(await isPasswordMatch(password, user.password as string))) {
     throw new ApiError(httpStatus.UNAUTHORIZED, 'Incorrect username or password');

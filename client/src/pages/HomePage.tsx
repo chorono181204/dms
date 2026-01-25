@@ -1,54 +1,15 @@
+import { useState, useEffect } from 'react'
 import { Card, Row, Col, Statistic, Typography, Table, Tag } from 'antd'
 import {
   FileTextOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
 } from '@ant-design/icons'
+import { getDashboardStats } from '../api/services/document.service'
 
 const { Title } = Typography
 
-// Mock data
-const mockStats = {
-  totalDocuments: 1248,
-  pendingApproval: 12,
-  pendingSign: 8,
-  signedToday: 45,
-}
 
-const recentDocuments = [
-  {
-    id: '1',
-    title: 'Báo cáo xét nghiệm BN-2024-001',
-    category: 'Xét nghiệm',
-    status: 'SIGNED',
-    owner: 'Nguyễn Văn A',
-    createdAt: '2024-01-15 10:30',
-  },
-  {
-    id: '2',
-    title: 'Phiếu khám bệnh BN-2024-002',
-    category: 'Khám bệnh',
-    status: 'PENDING_APPROVE',
-    owner: 'Trần Thị B',
-    createdAt: '2024-01-15 09:15',
-  },
-  {
-    id: '3',
-    title: 'Kết quả chẩn đoán hình ảnh',
-    category: 'Chẩn đoán',
-    status: 'PENDING_SIGN',
-    owner: 'Lê Văn C',
-    createdAt: '2024-01-15 08:45',
-  },
-  {
-    id: '4',
-    title: 'Báo cáo phẫu thuật',
-    category: 'Phẫu thuật',
-    status: 'APPROVED',
-    owner: 'Phạm Thị D',
-    createdAt: '2024-01-14 16:20',
-  },
-]
 
 const statusColors: Record<string, string> = {
   DRAFT: 'default',
@@ -98,10 +59,43 @@ const columns = [
     title: 'Thời gian',
     dataIndex: 'createdAt',
     key: 'createdAt',
+    render: (text: string) => text ? new Date(text).toLocaleString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }) : '',
   },
 ]
 
 export default function HomePage() {
+  const [stats, setStats] = useState({
+    totalDocuments: 0,
+    pendingApproval: 0,
+    pendingSign: 0,
+    signedToday: 0
+  });
+  const [recentDocuments, setRecentDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const data = await getDashboardStats();
+      setStats(data.stats);
+      setRecentDocuments(data.recentDocuments);
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div>
       <Title level={3}>Trang chủ</Title>
@@ -109,40 +103,40 @@ export default function HomePage() {
       {/* Statistics Cards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card loading={loading} bordered={false}>
             <Statistic
               title="Tổng số tài liệu"
-              value={mockStats.totalDocuments}
+              value={stats.totalDocuments}
               prefix={<FileTextOutlined />}
               valueStyle={{ color: '#1890ff' }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card loading={loading} bordered={false}>
             <Statistic
               title="Chờ phê duyệt"
-              value={mockStats.pendingApproval}
+              value={stats.pendingApproval}
               prefix={<ClockCircleOutlined />}
               valueStyle={{ color: '#faad14' }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card loading={loading} bordered={false}>
             <Statistic
               title="Chờ ký"
-              value={mockStats.pendingSign}
+              value={stats.pendingSign}
               prefix={<ClockCircleOutlined />}
               valueStyle={{ color: '#ff7a00' }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card loading={loading} bordered={false}>
             <Statistic
               title="Đã ký hôm nay"
-              value={mockStats.signedToday}
+              value={stats.signedToday}
               prefix={<CheckCircleOutlined />}
               valueStyle={{ color: '#52c41a' }}
             />
@@ -151,12 +145,12 @@ export default function HomePage() {
       </Row>
 
       {/* Recent Documents */}
-      <Card title="Tài liệu gần đây" style={{ marginBottom: 24 }}>
+      <Card title="Tài liệu gần đây" style={{ marginBottom: 24 }} loading={loading} bordered={false}>
         <Table
           dataSource={recentDocuments}
           columns={columns}
           rowKey="id"
-          pagination={{ pageSize: 5 }}
+          pagination={false}
           size="small"
         />
       </Card>

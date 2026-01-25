@@ -5,7 +5,11 @@ const createCategory = {
         name: Joi.string().required(),
         description: Joi.string().allow('', null),
         isActive: Joi.boolean(),
-        departmentId: Joi.number().allow(null),
+        departmentId: Joi.number().allow(null), // Keep for backward compatibility if needed, or remove
+        isGlobal: Joi.boolean(),
+
+        departmentIds: Joi.array().items(Joi.number()),
+        parentId: Joi.number().integer().allow(null),
     }),
 };
 
@@ -17,6 +21,7 @@ const getCategories = {
         sortBy: Joi.string(),
         limit: Joi.number().integer(),
         page: Joi.number().integer(),
+        parentId: Joi.alternatives().try(Joi.number().integer(), Joi.string().valid('null')),
     }),
 };
 
@@ -36,6 +41,9 @@ const updateCategory = {
             description: Joi.string().allow('', null),
             isActive: Joi.boolean(),
             departmentId: Joi.number().allow(null),
+            isGlobal: Joi.boolean(),
+            departmentIds: Joi.array().items(Joi.number()),
+            parentId: Joi.number().integer().allow(null),
         })
         .min(1),
 };

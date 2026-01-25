@@ -10,6 +10,7 @@ export interface Version {
     fileSize: number;
     changeNote?: string;
     createdBy: string;
+    createdByName?: string;
     createdAt: string;
 }
 

@@ -16,7 +16,8 @@
   "files": [
     "dist-electron",
     "dist",
-    "public/logo.svg"
+    "public/logo.svg",
+    "public/sound.mp3"
   ],
   "mac": {
     "artifactName": "${productName}_${version}.${ext}",

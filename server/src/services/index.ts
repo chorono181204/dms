@@ -6,3 +6,5 @@ export { default as departmentService } from './department.service';
 export { default as templateService } from './template.service';
 export { default as documentService } from './document.service';
 export { default as categoryService } from './category.service';
+export { default as chatService } from './chat.service';
+export { default as notificationService } from './notification.service';

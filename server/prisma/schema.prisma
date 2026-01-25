@@ -24,6 +24,10 @@ model Department {
 
   createdBy String? // Username or Name
   updatedBy String?
+
+  // Security Flag
+  isSupervisory Boolean @default(false)
+  tasks         Task[]
 }
 
 model User {
@@ -35,6 +39,7 @@ model User {
   isEmailVerified Boolean     @default(true)
   phone           String?
   position        String? // Chức vụ (Trưởng khoa, Nhân viên...)
+  isChief         Boolean     @default(false) // KTV Trưởng
   // Quan hệ tổ chức
   departmentId    Int?
   department      Department? @relation(fields: [departmentId], references: [id])
@@ -53,6 +58,13 @@ model User {
   createdBy         String?
   updatedBy         String?
   signatureRequests SignatureRequest[]
+
+  // Task Management Relations
+  assignedTasks Task[]        @relation("TaskAssignee")
+  createdTasks  Task[]        @relation("TaskAssigner")
+  taskComments  TaskComment[]
+
+  notifications Notification[]
 }
 
 // 2. Mẫu văn bản
@@ -81,8 +93,21 @@ model Category {
   description String?
   isActive    Boolean @default(true)
 
+  // Hierarchical structure (self-referencing for folder nesting)
+  parentId Int?
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children Category[] @relation("CategoryHierarchy")
+
+  // Optimization fields
+  path  String? // Full path for breadcrumbs (e.g., "ISO/Quality/2024")
+  level Int     @default(0) // Depth level (0 = root)
+  order Int     @default(0) // Custom sort order within same parent
+
+  // Direct 1:N Relation
   departmentId Int?
   department   Department? @relation(fields: [departmentId], references: [id])
+
+  isGlobal Boolean @default(false)
 
   documents Document[]
 
@@ -110,8 +135,10 @@ model Document {
   category   Category? @relation(fields: [categoryId], references: [id])
 
   // Người tạo - CHANGED TO STRING
-  createdBy String // Username
-  updatedBy String?
+  createdBy     String // Username
+  createdByName String? // Full Name snapshot
+  updatedBy     String?
+  updatedByName String? // Full Name snapshot
 
   // Phân quyền nâng cao: Google Docs Style
   visibility  String @default("PRIVATE") // PRIVATE (Chỉ tôi), DEPARTMENT (Khoa/Phòng), PUBLIC (Cả bệnh viện)
@@ -131,6 +158,13 @@ model Document {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   signatureRequests SignatureRequest[]
+
+  effectiveDate  DateTime?
+  expirationDate DateTime?
+  deletedAt      DateTime?
+
+  attachments DocumentAttachment[]
+  isReference Boolean              @default(false)
 }
 
 // 3.1 Document Version Control
@@ -144,8 +178,9 @@ model DocumentVersion {
   fileSize      Int
   changeNote    String?
 
-  createdBy String
-  createdAt DateTime @default(now())
+  createdBy     String
+  createdByName String?
+  createdAt     DateTime @default(now())
 
   @@unique([documentId, versionNumber])
   @@index([documentId])
@@ -203,7 +238,8 @@ model DocumentHistory {
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   // CHANGED TO STRING
-  createdBy String? // Username of actor
+  createdBy     String? // Username of actor
+  createdByName String? // Full Name snapshot
 
   action      String // CREATED, UPDATED, SUBMITTED...
   description String?
@@ -226,10 +262,153 @@ model SignatureRequest {
   user   User @relation(fields: [userId], references: [id])
 
   status String @default("PENDING") // PENDING, SIGNED, REJECTED
+  step   Int    @default(1) // Signing order step
 
   requestedAt DateTime  @default(now())
   signedAt    DateTime?
   note        String? // Ghi chú từ người gửi hoặc phản hồi
 
   @@unique([documentId, userId])
+}
+
+model DocumentAttachment {
+  id         Int      @id @default(autoincrement())
+  documentId Int
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  filePath String
+  fileName String
+  fileSize Int
+  fileType String? // MIME type
+
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([documentId])
+}
+
+// 6. Messaging System (Real-time Chat)
+model Conversation {
+  id       Int       @id @default(autoincrement())
+  type     String    @default("DIRECT") // DIRECT (1-1) or GROUP
+  messages Message[]
+
+  // Participants
+  user1Id Int
+  user2Id Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([user1Id, user2Id])
+}
+
+model Message {
+  id             Int          @id @default(autoincrement())
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId Int
+  text     String?
+  type     String  @default("text") // text, file, image
+
+  attachments MessageAttachment[]
+
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+}
+
+model MessageAttachment {
+  id        Int     @id @default(autoincrement())
+  messageId Int
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  filePath String
+  fileName String
+  fileSize Int
+  fileType String?
+
+  createdAt DateTime @default(now())
+}
+
+// 7. Task Management (Kanban)
+// 7. Task Management (Kanban)
+
+model Task {
+  id          Int     @id @default(autoincrement())
+  title       String
+  description String?
+  status      String  @default("TODO") // TODO, IN_PROGRESS, REVIEW, DONE
+  priority    String  @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+
+  // Assignee (User who does the task)
+  assigneeId Int?
+  assignee   User? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+
+  // Assigner (User who created/assigned the task)
+  assignerId Int
+  assigner   User @relation("TaskAssigner", fields: [assignerId], references: [id])
+
+  // Department scope (Optional: if assigned to a whole department or for filtering)
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  attachments TaskAttachment[]
+  comments    TaskComment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TaskComment {
+  id     Int  @id @default(autoincrement())
+  taskId Int
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  content String?
+  type    String  @default("COMMENT") // COMMENT, RESULT
+
+  attachments TaskAttachment[]
+
+  createdAt DateTime @default(now())
+}
+
+model TaskAttachment {
+  id     Int  @id @default(autoincrement())
+  taskId Int
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  taskCommentId Int?
+  taskComment   TaskComment? @relation(fields: [taskCommentId], references: [id], onDelete: Cascade)
+
+  filePath String
+  fileName String
+  fileSize Int
+  fileType String?
+
+  uploadedBy String // Username
+  createdAt  DateTime @default(now())
+}
+
+// 8. Notification System
+model Notification {
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title   String
+  content String
+  type    String  @default("SYSTEM") // SYSTEM, TASK, DOCUMENT
+  link    String? // Action URL (e.g., /tasks?taskId=1)
+
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }

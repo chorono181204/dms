@@ -14,3 +14,7 @@ export const getUsers = async (params?: any) => {
     });
     return response.data;
 };
+
+export const searchUsers = async (query: string) => {
+    return getUsers({ name: query, scope: 'all', limit: 20 });
+};

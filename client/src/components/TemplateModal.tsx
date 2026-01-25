@@ -182,7 +182,7 @@ export default function TemplateModal({
                                 disabled={!editorContent || !editorContent.includes('G:\\')}
                                 onClick={() => {
                                     if (editorContent && editorContent.includes('G:\\')) {
-                                        const downloadUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(editorContent)}`;
+                                        const downloadUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(editorContent)}&token=${localStorage.getItem('accessToken')}`;
                                         window.location.href = downloadUrl;
                                     }
                                 }}

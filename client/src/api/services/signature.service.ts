@@ -4,7 +4,7 @@ import { getBackendUrl } from '../../utils/config';
 
 const API_URL = `${getBackendUrl()}/v1/documents`;
 
-export const createSignatureRequest = async (documentId: number, userIds: number[], note: string = '') => {
+export const createSignatureRequest = async (documentId: number, payload: { userIds?: number[], signers?: { userId: number, step?: number, note?: string }[], note?: string }) => {
     const token = localStorage.getItem('accessToken');
     const response = await fetch(`${API_URL}/${documentId}/sign-request`, {
         method: 'POST',
@@ -12,7 +12,7 @@ export const createSignatureRequest = async (documentId: number, userIds: number
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ userIds, note }),
+        body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

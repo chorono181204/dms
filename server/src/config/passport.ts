@@ -5,7 +5,10 @@ import { TokenType } from './tokens';
 
 const jwtOptions = {
   secretOrKey: config.jwt.secret,
-  jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken()
+  jwtFromRequest: ExtractJwt.fromExtractors([
+    ExtractJwt.fromAuthHeaderAsBearerToken(),
+    ExtractJwt.fromUrlQueryParameter('token')
+  ])
 };
 
 const jwtVerify: VerifyCallback = async (payload, done) => {
@@ -20,6 +23,14 @@ const jwtVerify: VerifyCallback = async (payload, done) => {
         name: true,
         role: true,
         departmentId: true,
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            isSupervisory: true
+          }
+        },
         position: true
       },
       where: { id: Number(payload.sub) }

@@ -8,13 +8,34 @@ const router = express.Router();
 
 router
     .route('/')
-    .post(auth('manageTemplates'), validate(categoryValidation.createCategory), categoryController.createCategory) // Re-using manageTemplates or create new permission? Let's use manageTemplates for now or new 'manageCategories'. Roles need update.
+    .post(auth('manageDocuments'), validate(categoryValidation.createCategory), categoryController.createCategory) // Changed from manageTemplates to manageDocuments to allow Users
     .get(auth('getTemplates'), validate(categoryValidation.getCategories), categoryController.getCategories);
 
 router
     .route('/:categoryId')
+    .all((req, res, next) => {
+        console.log(`[CategoryRoute] ${req.method} ${req.originalUrl} - Params:`, req.params);
+        next();
+    })
     .get(auth('getTemplates'), validate(categoryValidation.getCategory), categoryController.getCategory)
-    .patch(auth('manageTemplates'), validate(categoryValidation.updateCategory), categoryController.updateCategory)
-    .delete(auth('manageTemplates'), validate(categoryValidation.deleteCategory), categoryController.deleteCategory);
+    .patch(auth('manageDocuments'), validate(categoryValidation.updateCategory), categoryController.updateCategory)
+    .delete(auth('manageDocuments'), validate(categoryValidation.deleteCategory), categoryController.deleteCategory);
+
+// NEW: Hierarchical category routes
+router
+    .route('/tree/all')
+    .get(auth('getTemplates'), categoryController.getCategoryTree);
+
+router
+    .route('/:categoryId/breadcrumbs')
+    .get(auth('getTemplates'), categoryController.getCategoryBreadcrumbs);
+
+router
+    .route('/:categoryId/contents')
+    .get(auth('getTemplates'), categoryController.getCategoryContents);
+
+router
+    .route('/:categoryId/move')
+    .patch(auth('manageDocuments'), categoryController.moveCategory);
 
 export default router;

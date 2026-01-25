@@ -51,8 +51,8 @@ export const processSignatureImage = (file: File): Promise<Blob> => {
                         255,
                         cv.ADAPTIVE_THRESH_GAUSSIAN_C,
                         cv.THRESH_BINARY,
-                        15,  // Block size
-                        10   // C constant
+                        91,  // Block size (Increased to prevent hollowing of thick strokes)
+                        15   // C constant
                     );
 
                     console.log('OpenCV: Applying morphological operations...');

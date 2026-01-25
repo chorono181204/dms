@@ -105,15 +105,6 @@ const Login: React.FC = () => {
                     layout="vertical"
                 >
                     <Form.Item
-                        name="backendUrl"
-                        label={<span style={{ fontWeight: 500 }}>Backend URL (tùy chọn)</span>}
-                    >
-                        <Input
-                            prefix={<ApiOutlined style={{ color: '#143C72' }} />}
-                            placeholder="http://localhost:3000"
-                        />
-                    </Form.Item>
-                    <Form.Item
                         name="username"
                         label={<span style={{ fontWeight: 500 }}>Tên đăng nhập</span>}
                         rules={[{ required: true, message: 'Vui lòng nhập tên đăng nhập!' }]}
@@ -127,7 +118,15 @@ const Login: React.FC = () => {
                     >
                         <Input.Password prefix={<LockOutlined style={{ color: '#143C72' }} />} placeholder="Nhập mật khẩu" />
                     </Form.Item>
-
+                    <Form.Item
+                        name="Url"
+                        label={<span style={{ fontWeight: 500 }}>URL (tùy chọn)</span>}
+                    >
+                        <Input
+                            prefix={<ApiOutlined style={{ color: '#143C72' }} />}
+                            placeholder="http://localhost:3000"
+                        />
+                    </Form.Item>
                     <Form.Item style={{ marginBottom: 12 }}>
                         <Button
                             type="primary"
@@ -147,7 +146,7 @@ const Login: React.FC = () => {
                     </Form.Item>
 
                     <div style={{ textAlign: 'center', color: '#8c8c8c', fontSize: 13 }}>
-                        © 2024 Hệ thống Quản lý Tài liệu Bệnh viện
+                        Hệ thống quản lý xét nghiệm theo ISO15189 và QĐ2429BYT
                     </div>
                 </Form>
             </Card>

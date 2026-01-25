@@ -13,7 +13,8 @@ export const createVersion = async (
     filePath: string,
     fileSize: number,
     changeNote: string | undefined,
-    createdBy: string
+    createdBy: string,
+    createdByName: string | null
 ) => {
     return await prisma.documentVersion.create({
         data: {
@@ -22,7 +23,8 @@ export const createVersion = async (
             filePath,
             fileSize,
             changeNote,
-            createdBy
+            createdBy,
+            createdByName
         }
     });
 };

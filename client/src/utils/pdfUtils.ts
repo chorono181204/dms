@@ -85,6 +85,7 @@ export const createCompositeSignatureImage = (
     height: number,
     userName?: string,
     userPosition?: string,
+    dateString?: string, // Added dateString parameter
     fontFamily: string = 'Arial',
     fontSizePt: number = 14
 ): Promise<string> => {
@@ -107,12 +108,14 @@ export const createCompositeSignatureImage = (
             let textHeight = 0;
             if (userName) textHeight += baseFontSize + textPadding;
             if (userPosition) textHeight += (baseFontSize * 0.85) + textPadding;
+            if (dateString) textHeight += (baseFontSize * 0.75) + textPadding; // Added height for date
 
             // Prepare fonts for measurement
             // Ensure font family is quoted if it contains spaces
             const cleanFont = fontFamily.includes(' ') ? `"${fontFamily}"` : fontFamily;
             const nameFont = `bold ${baseFontSize}px ${cleanFont}, sans-serif`;
             const positionFont = `normal ${baseFontSize * 0.85}px ${cleanFont}, sans-serif`;
+            const dateFont = `italic ${baseFontSize * 0.75}px ${cleanFont}, sans-serif`; // Added date font
 
             // Measure text width
             let maxTextWidth = 0;
@@ -124,6 +127,11 @@ export const createCompositeSignatureImage = (
             if (userPosition) {
                 ctx.font = positionFont;
                 const metrics = ctx.measureText(`(${userPosition})`);
+                maxTextWidth = Math.max(maxTextWidth, metrics.width);
+            }
+            if (dateString) { // Measure date width
+                ctx.font = dateFont;
+                const metrics = ctx.measureText(dateString);
                 maxTextWidth = Math.max(maxTextWidth, metrics.width);
             }
 
@@ -158,6 +166,13 @@ export const createCompositeSignatureImage = (
                 ctx.font = positionFont;
                 ctx.fillStyle = '#666666';
                 ctx.fillText(`(${userPosition})`, finalWidth / 2, currentY);
+                currentY += (baseFontSize * 0.85) + textPadding;
+            }
+
+            if (dateString) { // Draw date
+                ctx.font = dateFont;
+                ctx.fillStyle = '#000000'; // Black color for date
+                ctx.fillText(dateString, finalWidth / 2, currentY);
             }
 
             resolve(canvas.toDataURL('image/png'));

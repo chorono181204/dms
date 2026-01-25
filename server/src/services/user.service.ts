@@ -1,6 +1,7 @@
 import { User, Prisma } from '@prisma/client';
 import { Role } from '../config/roles';
 import httpStatus from 'http-status';
+import bcrypt from 'bcryptjs';
 import prisma from '../client';
 import ApiError from '../utils/ApiError';
 import { encryptPassword } from '../utils/encryption';
@@ -65,7 +66,8 @@ const queryUsers = async <Key extends keyof User>(
     'createdBy',
     'updatedBy',
     'position',
-    'signatureImage'
+    'signatureImage',
+    'isChief'
   ] as Key[]
 ): Promise<{
   results: Pick<User, Key>[];
@@ -87,7 +89,7 @@ const queryUsers = async <Key extends keyof User>(
       where: filter,
       select: (() => {
         const select: any = {
-          department: { select: { id: true, name: true, code: true } }
+          department: { select: { id: true, name: true, code: true, isSupervisory: true } }
         };
         keys.forEach(k => { select[k] = true; });
         return select;
@@ -130,11 +132,12 @@ const getUserById = async <Key extends keyof User>(
     'createdBy',
     'updatedBy',
     'position',
-    'signatureImage'
+    'signatureImage',
+    'isChief'
   ] as Key[]
 ): Promise<Pick<User, Key> | null> => {
   const select: any = {
-    department: { select: { id: true, name: true, code: true } }
+    department: { select: { id: true, name: true, code: true, isSupervisory: true } }
   };
   keys.forEach(k => { select[k] = true; });
 
@@ -168,7 +171,7 @@ const getUserByUsername = async <Key extends keyof User>(
   ] as Key[]
 ): Promise<Pick<User, Key> | null> => {
   const select: any = {
-    department: { select: { id: true, name: true, code: true } }
+    department: { select: { id: true, name: true, code: true, isSupervisory: true } }
   };
   keys.forEach(k => { select[k] = true; });
 
@@ -187,7 +190,7 @@ const getUserByUsername = async <Key extends keyof User>(
 const updateUserById = async <Key extends keyof User>(
   userId: number,
   updateBody: Prisma.UserUpdateInput,
-  keys: Key[] = ['id', 'username', 'name', 'role', 'departmentId', 'phone', 'createdBy', 'updatedBy', 'position'] as Key[]
+  keys: Key[] = ['id', 'username', 'name', 'role', 'departmentId', 'phone', 'createdBy', 'updatedBy', 'position', 'isChief'] as Key[]
 ): Promise<Pick<User, Key> | null> => {
   const user = await getUserById(userId, ['id', 'username', 'name']);
   if (!user) {
@@ -199,8 +202,14 @@ const updateUserById = async <Key extends keyof User>(
       throw new ApiError(httpStatus.BAD_REQUEST, 'Username already taken');
     }
   }
+
+  // Hash password if it's being updated
+  if (updateBody.password) {
+    updateBody.password = await bcrypt.hash(updateBody.password as string, 8);
+  }
+
   const select: any = {
-    department: { select: { id: true, name: true, code: true } }
+    department: { select: { id: true, name: true, code: true, isSupervisory: true } }
   };
   keys.forEach(k => { select[k] = true; });
 

@@ -9,6 +9,10 @@ import config from '../../config/config';
 
 import documentRoute from './document.route';
 import categoryRoute from './category.route';
+import chatRoute from './chat.route';
+
+import taskRoute from './task.route';
+import notificationRoute from './notification.route';
 
 const router = express.Router();
 
@@ -40,6 +44,18 @@ const defaultRoutes = [
   {
     path: '/categories',
     route: categoryRoute
+  },
+  {
+    path: '/chat',
+    route: chatRoute
+  },
+  {
+    path: '/tasks',
+    route: taskRoute
+  },
+  {
+    path: '/notifications',
+    route: notificationRoute
   }
 ];
 

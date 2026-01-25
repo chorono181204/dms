@@ -36,9 +36,42 @@ const queryDocuments = async (
     const sortBy = options.sortBy;
     const sortType = options.sortType ?? 'desc';
 
+    // Handle Date Ranges
+    const dateFilters: any = {};
+    if (filter.effectiveDateStart) {
+        dateFilters.effectiveDate = { ...dateFilters.effectiveDate, gte: new Date(filter.effectiveDateStart) };
+        delete filter.effectiveDateStart;
+    }
+    if (filter.effectiveDateEnd) {
+        dateFilters.effectiveDate = { ...dateFilters.effectiveDate, lte: new Date(filter.effectiveDateEnd) };
+        delete filter.effectiveDateEnd;
+    }
+    if (filter.expirationDateStart) {
+        dateFilters.expirationDate = { ...dateFilters.expirationDate, gte: new Date(filter.expirationDateStart) };
+        delete filter.expirationDateStart;
+    }
+    if (filter.expirationDateEnd) {
+        dateFilters.expirationDate = { ...dateFilters.expirationDate, lte: new Date(filter.expirationDateEnd) };
+        delete filter.expirationDateEnd;
+    }
+
+    // Merge date filters into main filter
+    // exclude soft-deleted documents by default
+    const finalFilter: any = {
+        ...filter,
+        ...dateFilters,
+        deletedAt: filter.deletedAt !== undefined ? filter.deletedAt : null
+    };
+
+    // If filter has AND array (from Role checks), we need to append date filters to it or merge carefully
+    // The controller constructs `filter` with `AND: [...]` for non-admins.
+    // If `filter.AND` exists, we should push to it? Or just merge at top level?
+    // Prisma `where` supports top-level fields AND `AND` array simultaneously.
+    // So `{ AND: [...], effectiveDate: {...} }` is valid AND logic.
+
     const [documents, totalResults] = await Promise.all([
         prisma.document.findMany({
-            where: filter,
+            where: finalFilter,
             skip: (page - 1) * limit,
             take: limit,
             orderBy: sortBy ? { [sortBy]: sortType } : { id: 'desc' },
@@ -51,10 +84,11 @@ const queryDocuments = async (
                 },
                 permissions: {
                     select: { userId: true, permission: true }
-                }
+                },
+                attachments: true
             }
         }),
-        prisma.document.count({ where: filter })
+        prisma.document.count({ where: finalFilter })
     ]);
 
     const totalPages = Math.ceil(totalResults / limit);
@@ -83,7 +117,8 @@ const getDocumentById = async (id: number): Promise<Document | null> => {
             },
             permissions: {
                 select: { userId: true, permission: true }
-            }
+            },
+            attachments: true
         }
     });
 };
@@ -110,12 +145,44 @@ const updateDocumentById = async (
 };
 
 /**
- * Delete document by id
+ * Soft delete document by id
  * @param {number} documentId
  * @returns {Promise<Document>}
  */
-const deleteDocumentById = async (documentId: number): Promise<Document> => {
+const softDeleteDocumentById = async (documentId: number): Promise<Document> => {
     const document = await getDocumentById(documentId);
+    if (!document) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Document not found');
+    }
+    return prisma.document.update({
+        where: { id: documentId },
+        data: { deletedAt: new Date() }
+    });
+};
+
+/**
+ * Restore document by id
+ * @param {number} documentId
+ * @returns {Promise<Document>}
+ */
+const restoreDocumentById = async (documentId: number): Promise<Document> => {
+    const document = await prisma.document.findUnique({ where: { id: documentId } });
+    if (!document) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Document not found');
+    }
+    return prisma.document.update({
+        where: { id: documentId },
+        data: { deletedAt: null }
+    });
+};
+
+/**
+ * Permanently delete document by id
+ * @param {number} documentId
+ * @returns {Promise<Document>}
+ */
+const permanentlyDeleteDocumentById = async (documentId: number): Promise<Document> => {
+    const document = await prisma.document.findUnique({ where: { id: documentId } });
     if (!document) {
         throw new ApiError(httpStatus.NOT_FOUND, 'Document not found');
     }
@@ -176,6 +243,8 @@ export default {
     queryDocuments,
     getDocumentById,
     updateDocumentById,
-    deleteDocumentById,
+    softDeleteDocumentById,
+    restoreDocumentById,
+    permanentlyDeleteDocumentById,
     updateDocumentVersion
 };
