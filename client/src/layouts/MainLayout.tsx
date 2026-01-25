@@ -164,7 +164,7 @@ function MainLayout() {
 
   // Socket notification logic
   useEffect(() => {
-    notificationSound.current = new Audio('/sound.mp3')
+    notificationSound.current = new Audio('sound.mp3')
 
     socketService.connect()
     const handleGlobalMessage = (message: any) => {
@@ -264,7 +264,7 @@ function MainLayout() {
                     }}
                   >
                     <img
-                      src="/logo.svg"
+                      src="logo.svg"
                       alt="Logo bệnh viện"
                       style={{
                         width: 32,
@@ -323,7 +323,7 @@ function MainLayout() {
                   }}
                 >
                   <img
-                    src="/logo.svg"
+                    src="logo.svg"
                     alt="Logo"
                     style={{
                       width: 32,

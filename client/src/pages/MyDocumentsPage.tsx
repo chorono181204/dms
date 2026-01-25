@@ -64,6 +64,9 @@ import SignatureRequestModal from '../components/SignatureRequestModal';
 import { PDFSignatureModal } from '../components/PDFSignatureModal';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { useAuth } from '../contexts/AuthContext';
+import { DragOutlined } from '@ant-design/icons';
+import FolderTreeModal from '../components/FolderTreeModal';
 
 const { Title } = Typography;
 
@@ -200,8 +203,10 @@ const MyDocumentsPage: React.FC = () => {
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
   const [folders, setFolders] = useState<any[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<any[]>([]);
+  const [moveModalVisible, setMoveModalVisible] = useState(false);
+  const [movingItem, setMovingItem] = useState<{ id: number, type: 'document' | 'folder', departmentId?: number, departmentName?: string } | null>(null);
 
-  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const { user: currentUser } = useAuth();
 
   const handleAddFolder = () => {
     setEditingCategory(null);
@@ -518,6 +523,17 @@ const MyDocumentsPage: React.FC = () => {
     if (canEdit) {
       items.push({ type: 'divider' });
       items.push({ key: 'edit', label: 'Sửa', icon: <EditOutlined />, onClick: () => handleEditCategory(folder) });
+      items.push({
+        key: 'move', label: 'Di chuyển', icon: <DragOutlined />, onClick: () => {
+          setMovingItem({
+            id: folder.id,
+            type: 'folder',
+            departmentId: folder.departmentId,
+            departmentName: folder.department?.name
+          });
+          setMoveModalVisible(true);
+        }
+      });
       const docCount = folder._count?.documents || 0;
       const isEmpty = docCount === 0;
 
@@ -557,6 +573,17 @@ const MyDocumentsPage: React.FC = () => {
     }
     if (canEdit) {
       if (!record.isReference) items.push({ key: 'request_sign', label: 'Trình ký', icon: <SendOutlined />, onClick: () => handleRequestSignature(record) });
+      items.push({
+        key: 'move', label: 'Di chuyển', icon: <DragOutlined />, onClick: () => {
+          setMovingItem({
+            id: record.id,
+            type: 'document',
+            departmentId: record.departmentId,
+            departmentName: record.department?.name
+          });
+          setMoveModalVisible(true);
+        }
+      });
       items.push({ key: 'edit', label: 'Chỉnh sửa', icon: <EditOutlined />, onClick: () => handleEdit(record.id) });
     }
     if (canSign && !record.isReference) items.push({ key: 'sign', label: 'Ký số', icon: <EditFilled />, onClick: () => handleSign(record) });
@@ -592,13 +619,42 @@ const MyDocumentsPage: React.FC = () => {
       } else {
         fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize);
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMoveSelect = async (targetFolderId: number | null) => {
+    if (!movingItem) return;
+
+    setLoading(true);
+    setMoveModalVisible(false);
+    try {
+      if (movingItem.type === 'document') {
+        const fd = new FormData();
+        fd.append('categoryId', targetFolderId === null ? '' : String(targetFolderId));
+        await updateDocument(movingItem.id, fd);
+        message.success('Đã di chuyển tài liệu');
+      } else {
+        await moveCategory(movingItem.id, { newParentId: targetFolderId });
+        message.success('Đã di chuyển thư mục');
+      }
+
+      // Refresh current folder
+      if (currentFolderId === null) {
+        fetchFolderContents(null, 1, pagination.pageSize);
+      } else {
+        fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize);
+      }
     } catch (error: any) {
       console.error(error);
       message.error(error.response?.data?.message || 'Lỗi khi di chuyển');
     } finally {
       setLoading(false);
+      setMovingItem(null);
     }
   };
+
 
   const columns: ColumnsType<any> = [
     { title: 'Số/Ký hiệu', dataIndex: 'code', key: 'code', width: 150, render: (text) => <b>{text || ''}</b> },
@@ -1024,6 +1080,17 @@ const MyDocumentsPage: React.FC = () => {
               fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize);
             }
           }}
+        />
+
+        <FolderTreeModal
+          visible={moveModalVisible}
+          onCancel={() => { setMoveModalVisible(false); setMovingItem(null); }}
+          onSelect={handleMoveSelect}
+          movingItemId={movingItem?.id}
+          movingItemType={movingItem?.type}
+          currentParentId={currentFolderId}
+          departmentId={movingItem?.departmentId}
+          departmentName={movingItem?.departmentName}
         />
       </div>
     </DndProvider >

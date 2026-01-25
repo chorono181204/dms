@@ -303,15 +303,21 @@ const deleteCategoryById = async (categoryId: number | string): Promise<Category
  * Get category tree structure
  * @param {any} user - Current user for permission filtering
  * @param {string} [createdBy] - Optional: Filter by owner
+ * @param {number} [departmentId] - Optional: Filter by department
  * @returns {Promise<Category[]>} - Tree structure with nested children
  */
-const getCategoryTree = async (user: any, createdBy?: string): Promise<any[]> => {
+const getCategoryTree = async (user: any, createdBy?: string, departmentId?: number): Promise<any[]> => {
     let where: any = {};
 
     // Apply Virtual Folder logic
     if (user.role !== 'ADMIN' || createdBy) {
         const visibleIds = await getVisibleCategoryIds(user, createdBy);
         where.id = { in: visibleIds };
+    }
+
+    // Filter by department if provided
+    if (departmentId) {
+        where.departmentId = departmentId;
     }
 
     // Fetch all categories (we'll build tree in memory for better performance)

@@ -37,6 +37,14 @@ export const getCategoryBreadcrumbs = async (categoryId: number | string) => {
 };
 
 export const moveCategory = async (categoryId: number | string, data: { newParentId: number | string | null }) => {
-    const response = await client.post(`/categories/${categoryId}/move`, data);
+    const response = await client.patch(`/categories/${categoryId}/move`, data);
     return response.data;
 };
+
+export const getCategoryTree = async (departmentId?: number) => {
+    const params = departmentId ? { departmentId } : {};
+    const response = await client.get('/categories/tree/all', { params });
+    return response.data;
+};
+
+

@@ -4,6 +4,7 @@ import { DeleteOutlined } from '@ant-design/icons';
 import { getUsers } from '../api/services/user.service';
 import { createSignatureRequest } from '../api/services/signature.service';
 import { submitDocument } from '../api/services/document.service';
+import { useAuth } from '../contexts/AuthContext';
 
 interface SignatureRequestModalProps {
     visible: boolean;
@@ -16,6 +17,7 @@ const { Option } = Select;
 const { TextArea } = Input;
 
 const SignatureRequestModal: React.FC<SignatureRequestModalProps> = ({ visible, onCancel, onSuccess, documentId }) => {
+    const { user: currentUser } = useAuth();
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const [users, setUsers] = useState<any[]>([]);
@@ -35,7 +37,7 @@ const SignatureRequestModal: React.FC<SignatureRequestModalProps> = ({ visible, 
 
     const fetchUsers = async () => {
         try {
-            const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+            // const currentUser = ... (moved to hook)
             const result = await getUsers({ limit: 1000 });
             setUsers(result.results.filter((u: any) => u.id !== currentUser.id) || []);
         } catch (error) {

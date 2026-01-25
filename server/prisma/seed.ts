@@ -8,6 +8,13 @@ async function main() {
 
     // Clear existing data
     // Delete in order of dependencies (child first)
+    await prisma.notification.deleteMany({});
+    await prisma.taskAttachment.deleteMany({});
+    await prisma.taskComment.deleteMany({});
+    await prisma.task.deleteMany({});
+    await prisma.messageAttachment.deleteMany({});
+    await prisma.message.deleteMany({});
+    await prisma.conversation.deleteMany({});
     await prisma.signatureRequest.deleteMany({});
     await prisma.documentPermission.deleteMany({});
     await prisma.signature.deleteMany({});

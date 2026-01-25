@@ -9,6 +9,9 @@ const client = axios.create({
 });
 
 client.interceptors.request.use((config) => {
+    // Dynamically update baseURL on every request to support runtime configuration changes
+    config.baseURL = getApiUrl();
+
     const token = localStorage.getItem('accessToken');
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;

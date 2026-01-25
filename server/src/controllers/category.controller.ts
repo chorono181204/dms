@@ -132,7 +132,8 @@ const deleteCategory = catchAsync(async (req, res) => {
 
 const getCategoryTree = catchAsync(async (req, res) => {
     const user = req.user as any;
-    const tree = await categoryService.getCategoryTree(user);
+    const { departmentId } = req.query;
+    const tree = await categoryService.getCategoryTree(user, undefined, departmentId ? parseInt(departmentId as string) : undefined);
     res.send(tree);
 });
 

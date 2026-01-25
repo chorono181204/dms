@@ -25,10 +25,12 @@ import templateService, { Template } from '../services/template.service';
 import TemplateModal from '../components/TemplateModal';
 import FilePreviewModal from '../components/FilePreviewModal';
 import { getBackendUrl } from '../utils/config';
+import { useAuth } from '../contexts/AuthContext';
 
 const { Title } = Typography;
 
 export default function TemplateManagementPage() {
+    const { user } = useAuth();
     const [searchText, setSearchText] = useState('');
 
     // Modal State
@@ -51,7 +53,6 @@ export default function TemplateManagementPage() {
     });
 
     // Auth Info
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
 
     const fetchTemplates = async (page = 1, limit = 10) => {
         setLoading(true);

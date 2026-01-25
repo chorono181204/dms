@@ -13,19 +13,37 @@ const Login: React.FC = () => {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
+    const [form] = Form.useForm();
+
+    // Extract initial IP from saved URL
+    const getInitialIp = () => {
+        const savedUrl = getBackendUrl();
+        try {
+            // Remove protocol and port
+            return savedUrl.replace('http://', '').replace('https://', '').split(':')[0];
+        } catch {
+            return 'localhost';
+        }
+    };
+
     const onFinish = async (values: any) => {
         setLoading(true);
         setError('');
         try {
-            // Save backend URL first
-            if (values.backendUrl) {
-                setBackendUrl(values.backendUrl);
+            // Update backend URL from IP
+            if (values.ipAddress) {
+                const newUrl = `http://${values.ipAddress.trim()}:3000`;
+                setBackendUrl(newUrl);
+
+                // Force reload if URL changed to ensure all services verify with new config? 
+                // Alternatively, just trust the save. 
+                // Since user said "lưu và dùng luôn", we assume current session needs it.
             }
 
             await login(values.username, values.password);
             navigate('/');
         } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to login');
+            setError(err.response?.data?.message || 'Đăng nhập thất bại');
         } finally {
             setLoading(false);
         }
@@ -37,49 +55,29 @@ const Login: React.FC = () => {
             justifyContent: 'center',
             alignItems: 'center',
             height: '100vh',
-            background: 'linear-gradient(135deg, #f0f2f5 0%, #d9e2ee 100%)', // Sáng sủa, hiện đại
+            background: 'linear-gradient(135deg, #f0f2f5 0%, #d9e2ee 100%)',
             position: 'relative',
             overflow: 'hidden'
         }}>
-            {/* Background decoration circles */}
             <div style={{
-                position: 'absolute',
-                top: -100,
-                right: -100,
-                width: 400,
-                height: 400,
-                borderRadius: '50%',
-                background: 'rgba(20, 60, 114, 0.05)',
-                zIndex: 0
+                position: 'absolute', top: -100, right: -100, width: 400, height: 400,
+                borderRadius: '50%', background: 'rgba(20, 60, 114, 0.05)', zIndex: 0
             }} />
             <div style={{
-                position: 'absolute',
-                bottom: -50,
-                left: -50,
-                width: 300,
-                height: 300,
-                borderRadius: '50%',
-                background: 'rgba(244, 210, 66, 0.1)',
-                zIndex: 0
+                position: 'absolute', bottom: -50, left: -50, width: 300, height: 300,
+                borderRadius: '50%', background: 'rgba(244, 210, 66, 0.1)', zIndex: 0
             }} />
 
             <Card
                 style={{
-                    width: 420,
-                    borderRadius: 12,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
-                    borderTop: '4px solid #143C72', // Main brand color
-                    zIndex: 1
+                    width: 420, borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+                    borderTop: '4px solid #143C72', zIndex: 1
                 }}
                 bordered={false}
             >
                 <div style={{ textAlign: 'center', marginBottom: 32 }}>
                     <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-                        <img
-                            src="/logo.svg"
-                            alt="Logo"
-                            style={{ width: 64, height: 64, objectFit: 'contain' }}
-                        />
+                        <img src="logo.svg" alt="Logo" style={{ width: 64, height: 64, objectFit: 'contain' }} />
                     </div>
                     <div style={{ color: '#143C72', fontWeight: 800, fontSize: 18, textTransform: 'uppercase', lineHeight: 1.4 }}>
                         Bệnh viện Đa khoa Số 1
@@ -95,10 +93,11 @@ const Login: React.FC = () => {
                 {error && <Alert message={error} type="error" showIcon style={{ marginBottom: 24 }} />}
 
                 <Form
+                    form={form}
                     name="login"
                     initialValues={{
                         remember: true,
-                        backendUrl: getBackendUrl()
+                        ipAddress: getInitialIp()
                     }}
                     onFinish={onFinish}
                     size="large"
@@ -119,12 +118,13 @@ const Login: React.FC = () => {
                         <Input.Password prefix={<LockOutlined style={{ color: '#143C72' }} />} placeholder="Nhập mật khẩu" />
                     </Form.Item>
                     <Form.Item
-                        name="Url"
-                        label={<span style={{ fontWeight: 500 }}>URL (tùy chọn)</span>}
+                        name="ipAddress"
+                        label={<span style={{ fontWeight: 500 }}>IP Máy chủ (Port 3000)</span>}
+                        rules={[{ required: true, message: 'Vui lòng nhập IP máy chủ!' }]}
                     >
                         <Input
                             prefix={<ApiOutlined style={{ color: '#143C72' }} />}
-                            placeholder="http://localhost:3000"
+                            placeholder="Ví dụ: 192.168.1.10"
                         />
                     </Form.Item>
                     <Form.Item style={{ marginBottom: 12 }}>

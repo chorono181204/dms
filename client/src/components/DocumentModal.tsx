@@ -6,6 +6,7 @@ import { getCategories } from '../api/services/category.service';
 import { getUsers } from '../api/services/user.service';
 import { createSignatureRequest } from '../api/services/signature.service';
 import dayjs from 'dayjs';
+import { useAuth } from '../contexts/AuthContext';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -21,7 +22,7 @@ interface DocumentModalProps {
 
 const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSuccess, documentId, defaultCategoryId }) => {
     const [form] = Form.useForm();
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const { user } = useAuth();
     const canCreateConfidential = user.role === 'ADMIN' || user.department?.isSupervisory;
 
     const [loading, setLoading] = useState(false);

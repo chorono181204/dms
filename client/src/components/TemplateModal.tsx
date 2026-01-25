@@ -3,6 +3,7 @@ import { Modal, Form, Input, Select, Switch, message, Button, Upload } from 'ant
 import { UploadOutlined } from '@ant-design/icons';
 import templateService, { Template } from '../services/template.service';
 import { getBackendUrl } from '../utils/config';
+import { useAuth } from '../contexts/AuthContext';
 
 interface TemplateModalProps {
     visible: boolean;
@@ -17,6 +18,7 @@ export default function TemplateModal({
     onSuccess,
     templateId
 }: TemplateModalProps) {
+    const { user } = useAuth();
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const [editorContent, setEditorContent] = useState('');
@@ -38,7 +40,7 @@ export default function TemplateModal({
             }
         };
 
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        // const user = ... (now using hook)
 
         if (visible) {
             setFileList([]); // Reset files
