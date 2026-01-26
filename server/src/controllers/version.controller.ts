@@ -152,7 +152,7 @@ export const restoreVersion = async (req: Request, res: Response) => {
         newVersionNumber,
         newFilePath,
         stats.size,
-        `Restored from version ${versionNumber}`,
+        `Khôi phục từ phiên bản ${versionNumber}`,
         user.username,
         user.name || user.username
     );

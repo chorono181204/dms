@@ -119,7 +119,9 @@ const storage = multer.diskStorage({
         // Helper to sanitize for filesystem paths - only remove truly illegal characters
         const sanitize = (name: string) => name.replace(/[<>:"/\\|?*]/g, '_');
 
-        const cleanName = sanitize(file.originalname);
+        // Fix UTF-8 encoding for filenames coming from Multer/Busboy (defaults to latin1)
+        const decodedName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        const cleanName = sanitize(decodedName);
         const nameWithoutExt = path.parse(cleanName).name;
         const ext = path.parse(cleanName).ext;
 

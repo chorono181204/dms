@@ -30,6 +30,8 @@ interface SignatureInstance {
     y: number;
     width: number;
     height: number;
+    placedZoom: number;
+    textSize: number;
 }
 
 export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
@@ -71,7 +73,7 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
 
     const [textSize, setTextSize] = useState(() => {
         const savedSize = localStorage.getItem(STORAGE_KEYS.FONT_SIZE);
-        return savedSize ? parseInt(savedSize) : 12; // Default 12
+        return savedSize ? parseInt(savedSize) : 10; // Default 10
     });
 
     // Persist changes
@@ -114,6 +116,74 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
     const [viewScale, setViewScale] = useState(1.0); // PDF rendering scale
     const containerRef = useRef<HTMLDivElement>(null);
 
+    // Resizing state
+    const [resizingId, setResizingId] = useState<string | null>(null);
+    const [resizeStart, setResizeStart] = useState<{ x: number, y: number, width: number, height: number, textSize: number } | null>(null);
+
+    const handleResizeMouseDown = (e: React.MouseEvent, sig: SignatureInstance) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setResizingId(sig.id);
+        setResizeStart({
+            x: e.clientX,
+            y: e.clientY,
+            width: sig.width,
+            height: sig.height,
+            textSize: sig.textSize
+        });
+    };
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!resizingId || !resizeStart) return;
+
+            const dx = (e.clientX - resizeStart.x) / viewScale;
+
+            setSignatures(prev => prev.map(sig => {
+                if (sig.id === resizingId) {
+                    const newWidth = Math.max(40 / viewScale, resizeStart.width + dx);
+                    const scaleFactor = newWidth / resizeStart.width;
+                    return {
+                        ...sig,
+                        width: newWidth,
+                        height: newWidth / aspectRatio,
+                        textSize: resizeStart.textSize * scaleFactor
+                    };
+                }
+                return sig;
+            }));
+        };
+
+        const handleMouseUp = () => {
+            setResizingId(null);
+            setResizeStart(null);
+        };
+
+        if (resizingId) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [resizingId, resizeStart, viewScale, aspectRatio]);
+
+    // Proportional scaling for text size
+    const handleSignatureSizeChange = (newWidth: number) => {
+        const oldWidth = signatureSize.width;
+        if (oldWidth > 0) {
+            const factor = newWidth / oldWidth;
+            setTextSize(prev => {
+                const newVal = prev * factor;
+                // Keep it in a reasonable range but allow precision
+                return Math.max(1, Math.min(100, newVal));
+            });
+        }
+        setSignatureSize({ width: newWidth, height: newWidth / aspectRatio });
+    };
+
     // Load PDF bytes when URL changes for final embedding
     useEffect(() => {
         if (pdfUrl) {
@@ -136,7 +206,7 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
     };
 
     // Handle clicking on a specific page to place signature
-    const handlePageClick = (e: React.MouseEvent<HTMLDivElement>, pageNumber: number) => {
+    const handlePageClick = async (e: React.MouseEvent<HTMLDivElement>, pageNumber: number) => {
         if (!isPlacingMode) return;
 
         // Get coordinates relative to the page container
@@ -147,16 +217,29 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
         // Actually, react-draggable works in pixels. It's easier if we store display pixels 
         // and then map to PDF point on save.
 
-        const x = e.clientX - rect.left - (signatureSize.width * viewScale) / 2;
-        const y = e.clientY - rect.top - (signatureSize.height * viewScale) / 2;
+        const compositeInfo = await import('../utils/pdfUtils').then(m => m.createCompositeSignatureImage(
+            signatureImageUrl,
+            signatureSize.width,
+            signatureSize.height,
+            includeInfo ? userName : undefined,
+            includeInfo ? userPosition : undefined,
+            includeDate && signDate ? signDate.format('HH:mm DD/MM/YYYY') : undefined,
+            textFont,
+            textSize
+        ));
+
+        const visualWidth = compositeInfo.visualWidth;
+        const visualHeight = compositeInfo.visualHeight;
 
         const newSignature: SignatureInstance = {
             id: `sig-${Date.now()}`,
             pageNumber,
-            x: Math.max(0, x), // Ensure not outside
-            y: Math.max(0, y),
-            width: signatureSize.width,
-            height: signatureSize.height,
+            x: (e.clientX - rect.left - visualWidth / 2) / viewScale,
+            y: (e.clientY - rect.top - visualHeight / 2) / viewScale,
+            width: visualWidth / viewScale,
+            height: visualHeight / viewScale,
+            placedZoom: viewScale,
+            textSize: textSize,
         };
 
         setSignatures([...signatures, newSignature]);
@@ -172,7 +255,7 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
 
     const handleDragStop = (id: string, data: { x: number; y: number }) => {
         setSignatures(signatures.map(sig =>
-            sig.id === id ? { ...sig, x: data.x, y: data.y } : sig
+            sig.id === id ? { ...sig, x: data.x / viewScale, y: data.y / viewScale } : sig
         ));
     };
 
@@ -190,57 +273,47 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
         try {
             message.loading({ content: 'Đang xử lý PDF...', key: 'signing' });
 
-            let modifiedPdfBytes = pdfBytes;
-            const fallbackPageHeight = 842;
+            const pdfDoc = await import('pdf-lib').then(m => m.PDFDocument.load(pdfBytes));
+            const pages = pdfDoc.getPages();
 
             for (const sig of signatures) {
-                const pageEl = document.querySelector(`.page-container[data-page-number="${sig.pageNumber}"] .react-pdf__Page__canvas`);
-                let truePageHeight = fallbackPageHeight;
-                let currentScale = viewScale;
+                const page = pages[sig.pageNumber - 1];
+                const { height: truePageHeight } = page.getSize();
 
-                if (pageEl) {
-                    const rect = pageEl.getBoundingClientRect();
-                    truePageHeight = rect.height / currentScale;
-                }
-
-                // Pass font settings to generator
-                const compositeDataUrl = await import('../utils/pdfUtils').then(m => m.createCompositeSignatureImage(
+                // Generate composite image for THIS signature
+                const compositeInfo = await import('../utils/pdfUtils').then(m => m.createCompositeSignatureImage(
                     signatureImageUrl,
-                    sig.width,
-                    sig.height,
+                    sig.width * sig.placedZoom, // Base width on placement zoom to match preview
+                    sig.height * sig.placedZoom,
                     includeInfo ? userName : undefined,
                     includeInfo ? userPosition : undefined,
-                    includeDate && signDate ? signDate.format('HH:mm DD/MM/YYYY') : undefined, // Check toggle and pass date
+                    includeDate && signDate ? signDate.format('HH:mm DD/MM/YYYY') : undefined,
                     textFont,
-                    textSize
+                    sig.textSize
                 ));
 
-                const compositeImg = new Image();
-                compositeImg.src = compositeDataUrl;
-                await new Promise(r => compositeImg.onload = r);
+                const pdfWidth = (sig.width * compositeInfo.visualWidth) / (sig.width * sig.placedZoom);
+                const pdfHeight = (sig.width * compositeInfo.visualHeight) / (sig.width * sig.placedZoom);
 
-                const compositeAspectRatio = compositeImg.width / compositeImg.height;
-                const pdfWidth = sig.width;
-                const pdfHeight = pdfWidth / compositeAspectRatio;
+                const pdfBaseX = sig.x;
+                const pdfBaseY = sig.y;
 
-                const pdfBaseX = sig.x / currentScale;
-                const pdfBaseY = sig.y / currentScale;
-
+                // Adjust Y for bottom-left origin
                 const pdfY = truePageHeight - pdfBaseY - pdfHeight;
 
-                modifiedPdfBytes = await embedSignatureInPdf(
-                    modifiedPdfBytes,
-                    compositeDataUrl,
-                    sig.pageNumber - 1,
-                    pdfBaseX,
-                    pdfY,
-                    pdfWidth,
-                    pdfHeight,
-                    undefined,
-                    undefined
-                );
+                await import('../utils/pdfUtils').then(async m => {
+                    const signatureImage = await pdfDoc.embedPng(compositeInfo.dataUrl);
+                    page.drawImage(signatureImage, {
+                        x: pdfBaseX,
+                        y: pdfY,
+                        width: pdfWidth,
+                        height: pdfHeight,
+                        blendMode: 'Multiply' as any
+                    });
+                });
             }
 
+            const modifiedPdfBytes = await pdfDoc.save();
             const blob = pdfBytesToBlob(modifiedPdfBytes);
             onConfirm(blob);
             message.success({ content: 'Ký văn bản thành công!', key: 'signing' });
@@ -333,11 +406,10 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                     {pageSignatures.map(sig => (
                                         <Draggable
                                             key={`sig-${sig.id}`}
-                                            defaultPosition={{ x: sig.x, y: sig.y }}
+                                            position={{ x: sig.x * viewScale, y: sig.y * viewScale }}
                                             onStop={(e, data) => handleDragStop(sig.id, data)}
                                             bounds="parent"
                                             disabled={false}
-                                            scale={viewScale}
                                         >
                                             <div
                                                 onClick={(e) => e.stopPropagation()}
@@ -345,20 +417,41 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                                     position: 'absolute',
                                                     top: 0,
                                                     left: 0,
-                                                    width: sig.width * viewScale, // Scale width
+                                                    width: sig.width * sig.placedZoom,
                                                     cursor: 'move',
                                                     border: '2px solid #52c41a',
                                                     borderRadius: 4,
                                                     backgroundColor: 'rgba(255, 255, 255, 0.6)',
                                                     boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
                                                     zIndex: 100,
+                                                    padding: '0 4px',
                                                     display: 'flex',
                                                     flexDirection: 'column',
                                                     alignItems: 'center',
-                                                    paddingBottom: 4
+                                                    paddingBottom: 2,
+                                                    transition: resizingId === sig.id ? 'none' : 'box-shadow 0.2s'
                                                 }}
-                                                title="Kéo thả để di chuyển"
+                                                title="Kéo thả để di chuyển, kéo góc để chỉnh cỡ"
                                             >
+                                                {/* Resize Handle */}
+                                                {!isPlacingMode && (
+                                                    <div
+                                                        onMouseDown={(e) => handleResizeMouseDown(e, sig)}
+                                                        style={{
+                                                            position: 'absolute',
+                                                            bottom: -6,
+                                                            right: -6,
+                                                            width: 14,
+                                                            height: 14,
+                                                            backgroundColor: '#1890ff',
+                                                            borderRadius: '50%',
+                                                            cursor: 'nwse-resize',
+                                                            border: '2px solid #fff',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                                                            zIndex: 102
+                                                        }}
+                                                    />
+                                                )}
                                                 <Button
                                                     type="text"
                                                     danger
@@ -385,7 +478,7 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                                 {signatureImageUrl ? (
                                                     <img
                                                         src={signatureImageUrl}
-                                                        style={{ width: '100%', height: sig.height * viewScale, display: 'block', objectFit: 'contain' }} // Scale height
+                                                        style={{ width: '100%', height: sig.height * sig.placedZoom, display: 'block', objectFit: 'contain' }}
                                                         alt="Signature"
                                                     />
                                                 ) : (
@@ -404,38 +497,44 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                                 )}
                                                 {includeInfo && userName && (
                                                     <div style={{
-                                                        fontSize: textSize * 0.8, // Roughly preview size
+                                                        fontSize: sig.textSize,
                                                         fontFamily: textFont,
                                                         fontWeight: 'bold',
                                                         color: '#000',
-                                                        marginTop: 2,
+                                                        marginTop: -2,
                                                         textAlign: 'center',
-                                                        lineHeight: '1.2'
+                                                        lineHeight: '1.2',
+                                                        whiteSpace: 'nowrap',
+                                                        userSelect: 'none'
                                                     }}>
                                                         {userName}
                                                     </div>
                                                 )}
                                                 {includeInfo && userPosition && (
                                                     <div style={{
-                                                        fontSize: textSize * 0.7,
+                                                        fontSize: sig.textSize * 0.8,
                                                         fontFamily: textFont,
                                                         color: '#666',
-                                                        marginTop: 1,
+                                                        marginTop: -2,
                                                         textAlign: 'center',
-                                                        lineHeight: '1.2'
+                                                        lineHeight: '1.2',
+                                                        whiteSpace: 'nowrap',
+                                                        userSelect: 'none'
                                                     }}>
                                                         ({userPosition})
                                                     </div>
                                                 )}
                                                 {includeDate && signDate && (
                                                     <div style={{
-                                                        fontSize: textSize * 0.65,
+                                                        fontSize: sig.textSize * 0.7,
                                                         fontFamily: textFont,
                                                         color: '#000000',
-                                                        marginTop: 1,
+                                                        marginTop: -2,
                                                         textAlign: 'center',
                                                         lineHeight: '1.2',
-                                                        fontStyle: 'italic'
+                                                        fontStyle: 'italic',
+                                                        whiteSpace: 'nowrap',
+                                                        userSelect: 'none'
                                                     }}>
                                                         {signDate.format('HH:mm DD/MM/YYYY')}
                                                     </div>
@@ -506,12 +605,13 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                 <span style={{ fontSize: 12, color: '#999' }}>Size:</span>
                                 <Slider
                                     style={{ flex: 1 }}
-                                    min={10}
-                                    max={30}
+                                    min={1}
+                                    max={50}
+                                    step={0.5}
                                     value={textSize}
                                     onChange={setTextSize}
                                 />
-                                <span style={{ fontSize: 12, width: 24 }}>{textSize}</span>
+                                <span style={{ fontSize: 12, width: 32 }}>{textSize.toFixed(1)}</span>
                             </div>
                         </div>
 
@@ -577,20 +677,20 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                             height: 'auto',
                                             display: 'block',
                                             margin: '0 auto',
-                                            marginBottom: 4
+                                            marginBottom: 0
                                         }}
                                     />
                                 ) : (
                                     <div style={{ padding: 20, color: '#999' }}>Chưa có chữ ký</div>
                                 )}
                                 {includeInfo && userName && (
-                                    <div style={{ fontFamily: textFont, fontSize: textSize, fontWeight: 'bold' }}>{userName}</div>
+                                    <div style={{ fontFamily: textFont, fontSize: textSize, fontWeight: 'bold', whiteSpace: 'nowrap' }}>{userName}</div>
                                 )}
                                 {includeInfo && userPosition && (
-                                    <div style={{ fontFamily: textFont, fontSize: textSize * 0.85, color: '#666' }}>({userPosition})</div>
+                                    <div style={{ fontFamily: textFont, fontSize: textSize * 0.8, color: '#666', whiteSpace: 'nowrap' }}>({userPosition})</div>
                                 )}
                                 {includeDate && signDate && (
-                                    <div style={{ fontFamily: textFont, fontSize: textSize * 0.75, color: '#000000', fontStyle: 'italic', marginTop: 2 }}>{signDate.format('HH:mm DD/MM/YYYY')}</div>
+                                    <div style={{ fontFamily: textFont, fontSize: textSize * 0.7, color: '#000000', fontStyle: 'italic', marginTop: 0, whiteSpace: 'nowrap' }}>{signDate.format('HH:mm DD/MM/YYYY')}</div>
                                 )}
                             </div>
                         </div>
@@ -607,11 +707,11 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                 Kích thước chữ ký:
                             </div>
                             <Slider
-                                min={80}
-                                max={400}
+                                min={60}
+                                max={600}
                                 value={signatureSize.width}
-                                onChange={(value) => setSignatureSize({ width: value, height: value / aspectRatio })}
-                                marks={{ 80: 'Nhỏ', 240: 'Vừa', 400: 'Lớn' }}
+                                onChange={handleSignatureSizeChange}
+                                marks={{ 60: 'Nhỏ', 330: 'Vừa', 600: 'Lớn' }}
                             />
                             <div style={{ textAlign: 'center', fontSize: 12, color: '#999', marginTop: 8 }}>
                                 {Math.round(signatureSize.width)}px × {Math.round(signatureSize.height)}px
@@ -630,12 +730,12 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                 Thu phóng (Zoom):
                             </div>
                             <Slider
-                                min={0.5}
-                                max={2.0}
+                                min={1.0}
+                                max={10.0}
                                 step={0.1}
                                 value={viewScale}
                                 onChange={setViewScale}
-                                marks={{ 0.5: '50%', 1.0: '100%', 1.5: '150%' }}
+                                marks={{ 1.0: 'x1', 2.0: 'x2', 5.0: 'x5', 10.0: 'x10' }}
                             />
                         </div>
 

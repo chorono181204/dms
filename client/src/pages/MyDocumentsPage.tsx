@@ -400,23 +400,41 @@ const MyDocumentsPage: React.FC = () => {
     }
 
     if (!record.content) {
-      message.error('Không tìm thấy file tài liệu');
+      message.error('Tài liệu không có nội dung file');
       return;
     }
 
-    const ext = record.content.split('.').pop()?.toLowerCase();
-    if (ext !== 'pdf') {
-      message.error('Chỉ hỗ trợ ký số trên file PDF');
-      return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        message.warning('Phiên làm việc hết hạn, vui lòng đăng nhập lại');
+        return;
+      }
+
+      message.loading({ content: 'Đang tải tài liệu...', key: 'sign-loading' });
+
+      const filePath = encodeURIComponent(record.content);
+      const downloadUrl = `${getBackendUrl()}/v1/upload/download?path=${filePath}&inline=true&token=${token}`;
+
+      const response = await fetch(downloadUrl, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch document');
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      setSignaturePdfUrl(blobUrl);
+      setSignatureDocTitle(record.title);
+      setSignatureDocId(record.id);
+      setSelectedDocumentForSignature(record);
+      setSignatureModalVisible(true);
+      message.destroy('sign-loading');
+    } catch (error: any) {
+      console.error('Sign error:', error);
+      message.error({ content: `Lỗi: ${error.message || 'Không thể tải tài liệu để ký'}`, key: 'sign-loading' });
     }
-
-    const downloadUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(record.content)}&token=${localStorage.getItem('accessToken')}&inline=true`;
-
-    setSignaturePdfUrl(downloadUrl);
-    setSignatureDocTitle(record.title);
-    setSignatureDocId(record.id);
-    setSelectedDocumentForSignature(record);
-    setSignatureModalVisible(true);
   };
 
   const handleRequestSignature = (record: any) => {
@@ -451,7 +469,8 @@ const MyDocumentsPage: React.FC = () => {
 
   const handleView = (record: any) => {
     if (record.content) {
-      const viewUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(record.content)}&inline=true`;
+      const token = localStorage.getItem('accessToken');
+      const viewUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(record.content)}&inline=true${token ? `&token=${token}` : ''}`;
       const ext = record.content.split('.').pop() || '';
       const fullFileName = record.title.toLocaleLowerCase().endsWith(ext.toLowerCase())
         ? record.title
@@ -1040,7 +1059,7 @@ const MyDocumentsPage: React.FC = () => {
           documentTitle={signatureDocTitle}
           documentId={signatureDocId || 0}
           onCancel={() => setSignatureModalVisible(false)}
-          signatureImageUrl={`${getBackendUrl()}/v1/upload/download?path=` + encodeURIComponent(currentUser.signatureImage || '') + '&inline=true&token=' + localStorage.getItem('accessToken')}
+          signatureImageUrl={currentUser.signatureImage ? `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(currentUser.signatureImage)}&inline=true&token=${localStorage.getItem('accessToken')}` : ''}
           userName={currentUser.name || currentUser.username} userPosition={currentUser.position || currentUser.role || ''}
           onConfirm={async (blob: Blob) => {
             if (!signatureDocId) return;
@@ -1048,23 +1067,20 @@ const MyDocumentsPage: React.FC = () => {
               const formData = new FormData();
               formData.append('file', blob, signatureDocTitle + '_signed.pdf');
               formData.append('status', 'SIGNED');
-              const token = localStorage.getItem('accessToken');
-              const url = `${getBackendUrl()}/v1/documents/` + signatureDocId;
-              const response = await fetch(url, {
-                method: 'PATCH',
-                headers: { Authorization: 'Bearer ' + token },
-                body: formData,
-              });
-              if (response.ok) {
-                setSignatureModalVisible(false);
-                message.success('Ký văn bản thành công!');
-                if (currentFolderId === null) {
-                  fetchFolderContents(null, 1, pagination.pageSize);
-                } else {
-                  fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize);
-                }
-              } else { message.error('Lỗi lưu văn bản đã ký'); }
-            } catch (error) { message.error('Lỗi upload văn bản đã ký'); }
+
+              await updateDocument(signatureDocId, formData);
+
+              setSignatureModalVisible(false);
+              message.success('Ký văn bản thành công!');
+              if (currentFolderId === null) {
+                fetchFolderContents(null, 1, pagination.pageSize);
+              } else {
+                fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize);
+              }
+            } catch (error: any) {
+              console.error('Sign upload error:', error);
+              message.error(error.response?.data?.message || 'Lỗi lưu văn bản đã ký');
+            }
           }}
         />
 

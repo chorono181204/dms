@@ -65,6 +65,8 @@ model User {
   taskComments  TaskComment[]
 
   notifications Notification[]
+  conversations Participant[]
+  messages      Message[]
 }
 
 // 2. Mẫu văn bản
@@ -289,18 +291,33 @@ model DocumentAttachment {
 
 // 6. Messaging System (Real-time Chat)
 model Conversation {
-  id       Int       @id @default(autoincrement())
-  type     String    @default("DIRECT") // DIRECT (1-1) or GROUP
-  messages Message[]
+  id       Int     @id @default(autoincrement())
+  type     String  @default("DIRECT") // DIRECT (1-1) or GROUP
+  name     String? // Tên nhóm
+  leaderId Int? // ID người tạo/trưởng nhóm
 
-  // Participants
-  user1Id Int
-  user2Id Int
+  messages     Message[]
+  participants Participant[]
+
+  // Participants (for DIRECT chat compatibility)
+  user1Id Int?
+  user2Id Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([user1Id, user2Id])
+}
+
+model Participant {
+  id             Int          @id @default(autoincrement())
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         Int
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt       DateTime     @default(now())
+
+  @@unique([conversationId, userId])
 }
 
 model Message {
@@ -309,6 +326,7 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   senderId Int
+  sender   User    @relation(fields: [senderId], references: [id])
   text     String?
   type     String  @default("text") // text, file, image
 

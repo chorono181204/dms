@@ -57,6 +57,11 @@ class SocketService {
         this.socket.on(event, callback);
     }
 
+    joinConversation(conversationId: number) {
+        if (!this.socket) return;
+        this.socket.emit('join_conversation', conversationId);
+    }
+
     off(event: string, callback?: (data: any) => void) {
         if (!this.socket) return;
         if (callback) {

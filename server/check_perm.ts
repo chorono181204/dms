@@ -28,7 +28,7 @@ async function checkPermissions() {
             where: {
                 OR: [
                     { title: { contains: 'test' } },
-                    { documentNumber: { contains: '536307' } }
+                    { code: { contains: '536307' } }
                 ]
             },
             include: {

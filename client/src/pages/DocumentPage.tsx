@@ -240,8 +240,9 @@ const DocumentPage: React.FC = () => {
     };
 
     const handleView = (record: Document) => {
+        const token = localStorage.getItem('accessToken');
         const filePath = encodeURIComponent(record.content);
-        const url = `${getBackendUrl()}/v1/upload/download?path=` + filePath + '&inline=true';
+        const url = `${getBackendUrl()}/v1/upload/download?path=` + filePath + '&inline=true' + (token ? `&token=${token}` : '');
         setSelectedDocumentForPreview(record); setPreviewUrl(url); setPreviewName(record.title); setPreviewVisible(true);
     };
 
@@ -262,17 +263,46 @@ const DocumentPage: React.FC = () => {
     };
 
     const handleSign = async (record: Document) => {
-        if (!user.signatureImage) { message.warning('Vui lòng tải lên chữ ký của bạn trong trang Hồ sơ trước khi ký văn bản'); return; }
+        if (!user.signatureImage) {
+            message.warning('Vui lòng tải lên chữ ký của bạn trong trang Hồ sơ trước khi ký văn bản');
+            return;
+        }
+        if (!record.content) {
+            message.error('Tài liệu không có nội dung file');
+            return;
+        }
+
         try {
-            const filePath = encodeURIComponent(record.content);
-            const url = `${getBackendUrl()}/v1/upload/download?path=` + filePath + '&inline=true';
+            message.loading({ content: 'Đang tải tài liệu...', key: 'sign-loading' });
             const token = localStorage.getItem('accessToken');
-            const response = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-            if (!response.ok) throw new Error('Failed to fetch PDF');
+            if (!token) {
+                message.warning('Phiên làm việc hết hạn, vui lòng đăng nhập lại');
+                return;
+            }
+
+            const filePath = encodeURIComponent(record.content);
+            const url = `${getBackendUrl()}/v1/upload/download?path=${filePath}&inline=true&token=${token}`;
+
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) throw new Error('Không có quyền truy cập (401)');
+                throw new Error(`Lỗi tải file: ${response.status}`);
+            }
+
             const pdfBlob = await response.blob();
             const pdfUrl = URL.createObjectURL(pdfBlob);
-            setSignaturePdfUrl(pdfUrl); setSignatureDocTitle(record.title); setSignatureDocId(record.id); setSignatureModalVisible(true);
-        } catch (error) { message.error('Không thể tải tài liệu để ký. Vui lòng thử lại sau.'); }
+            setSignaturePdfUrl(pdfUrl);
+            setSignatureDocTitle(record.title);
+            setSignatureDocId(record.id);
+            setSignatureModalVisible(true);
+            message.destroy('sign-loading');
+        } catch (error: any) {
+            console.error('Sign error:', error);
+            message.error({ content: `Lỗi: ${error.message || 'Không thể tải tài liệu để ký'}`, key: 'sign-loading' });
+        }
     };
 
     const handleRequestSignature = (record: Document) => { setSelectedDocumentForRequest(record); setSignatureRequestModalVisible(true); };
@@ -283,18 +313,16 @@ const DocumentPage: React.FC = () => {
             const formData = new FormData();
             formData.append('file', signedPdfBlob, signatureDocTitle + '_signed.pdf');
             formData.append('status', 'SIGNED');
-            const token = localStorage.getItem('accessToken');
-            const url = `${getBackendUrl()}/v1/documents/` + signatureDocId;
-            const response = await fetch(url, {
-                method: 'PATCH',
-                headers: { Authorization: 'Bearer ' + token },
-                body: formData,
-            });
-            if (response.ok) {
-                setSignatureModalVisible(false);
-                fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize);
-            } else { message.error('Lỗi lưu văn bản đã ký'); }
-        } catch (error) { message.error('Lỗi upload văn bản đã ký'); }
+
+            await updateDocument(signatureDocId, formData);
+
+            setSignatureModalVisible(false);
+            message.success('Ký văn bản thành công!');
+            fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize);
+        } catch (error: any) {
+            console.error('Sign upload error:', error);
+            message.error(error.response?.data?.message || 'Lỗi lưu văn bản đã ký');
+        }
     };
 
     const getFolderMenuItems = (folder: any): MenuProps['items'] => {
@@ -649,7 +677,16 @@ const DocumentPage: React.FC = () => {
                     })() : false}
                     attachments={selectedDocumentForPreview?.attachments || []}
                 />
-                <PDFSignatureModal visible={signatureModalVisible} pdfUrl={signaturePdfUrl} signatureImageUrl={`${getBackendUrl()}/v1/upload/download?path=` + encodeURIComponent(user.signatureImage || '') + '&inline=true&token=' + localStorage.getItem('accessToken')} documentTitle={signatureDocTitle} userName={user.name || user.username} userPosition={user.position || user.role || ''} onCancel={() => setSignatureModalVisible(false)} onConfirm={handleSignatureConfirm} />
+                <PDFSignatureModal
+                    visible={signatureModalVisible}
+                    pdfUrl={signaturePdfUrl}
+                    signatureImageUrl={user.signatureImage ? `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(user.signatureImage)}&inline=true&token=${localStorage.getItem('accessToken')}` : ''}
+                    documentTitle={signatureDocTitle}
+                    userName={user.name || user.username}
+                    userPosition={user.position || user.role || ''}
+                    onCancel={() => setSignatureModalVisible(false)}
+                    onConfirm={handleSignatureConfirm}
+                />
                 {selectedDocumentForHistory && (<VersionHistoryPanel visible={historyVisible} onClose={() => { setHistoryVisible(false); setSelectedDocumentForHistory(null); }} documentId={selectedDocumentForHistory.id} canEdit={user?.role === 'ADMIN' || selectedDocumentForHistory.createdBy === user?.username || selectedDocumentForHistory.permissions?.some((p: any) => p.userId === user?.id && p.permission === 'EDIT')} onRestore={() => fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize)} />)}
                 <CategoryModal visible={categoryModalVisible} category={selectedFolderForEdit} parentId={currentParentId} onCancel={() => setCategoryModalVisible(false)} onSuccess={() => { setCategoryModalVisible(false); fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize); }} />
 

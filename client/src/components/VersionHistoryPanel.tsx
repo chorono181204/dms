@@ -83,6 +83,16 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
 
+    const fixGarbledText = (text: string) => {
+        if (!text) return text;
+        // Common garbled patterns
+        return text
+            .replace(/Khá»Ÿi táº¡o tĂ i liá»‡u/g, 'Khởi tạo tài liệu')
+            .replace(/Lá»—i chuyá»ƒn Ä‘á»•i file sang PDF/g, 'Lỗi chuyển đổi file sang PDF')
+            .replace(/KhĂ´i phá»¥c tá»« phiĂªn báº£n/g, 'Khôi phục từ phiên bản')
+            .replace(/Cáº­p nháº­t tĂ i liá»‡u/g, 'Cập nhật tài liệu');
+    };
+
     return (
         <Drawer
             title="Lịch sử phiên bản"
@@ -130,7 +140,7 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                                         <FilePdfOutlined style={{ fontSize: '12px' }} />
                                         <Text style={{ fontSize: '12px', fontWeight: 500 }} ellipsis>
-                                            {version.changeNote || 'Cập nhật tài liệu'}
+                                            {fixGarbledText(version.changeNote) || 'Cập nhật tài liệu'}
                                         </Text>
                                     </div>
 
@@ -151,7 +161,7 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                                                 />
                                             </Tooltip>
 
-                                            {!isLatest && canEdit && (
+                                            {!isLatest && version.versionNumber !== 1 && canEdit && (
                                                 <Popconfirm
                                                     title="Khôi phục?"
                                                     description="Tạo phiên bản mới từ bản này."

@@ -27,11 +27,88 @@ const getOrCreateConversation = async (user1Id: number, user2Id: number): Promis
                 user1Id: id1,
                 user2Id: id2,
                 type: 'DIRECT',
+                participants: {
+                    create: [
+                        { userId: id1 },
+                        { userId: id2 }
+                    ]
+                }
             },
         });
     }
 
     return conversation;
+};
+
+/**
+ * Create a new group conversation
+ */
+const createGroup = async (name: string, leaderId: number, participantIds: number[]) => {
+    // Ensure leader is in the participants
+    const uniqueIds = Array.from(new Set([leaderId, ...participantIds]));
+
+    return prisma.conversation.create({
+        data: {
+            name,
+            leaderId,
+            type: 'GROUP',
+            participants: {
+                create: uniqueIds.map(uid => ({ userId: uid }))
+            }
+        },
+        include: {
+            participants: {
+                include: {
+                    user: {
+                        select: { id: true, name: true, username: true }
+                    }
+                }
+            }
+        }
+    });
+};
+
+/**
+ * Add participants to a group
+ */
+const addParticipants = async (conversationId: number, userIds: number[]) => {
+    const data = userIds.map(uid => ({
+        conversationId,
+        userId: uid
+    }));
+
+    // Use a transaction and multiple creates since SQLite createMany might be missing in this Prisma version
+    return prisma.$transaction(
+        userIds.map(uid => prisma.participant.create({
+            data: {
+                conversationId,
+                userId: uid
+            }
+        }))
+    );
+};
+
+/**
+ * Remove a participant from a group
+ */
+const removeParticipant = async (conversationId: number, userId: number) => {
+    return prisma.participant.delete({
+        where: {
+            conversationId_userId: {
+                conversationId,
+                userId
+            }
+        }
+    });
+};
+
+/**
+ * Delete a conversation (Only if leader or if it's a direct chat being cleaned up)
+ */
+const deleteConversation = async (conversationId: number) => {
+    return prisma.conversation.delete({
+        where: { id: conversationId }
+    });
 };
 
 /**
@@ -50,6 +127,12 @@ const sendMessage = async (
     type: string = 'text',
     attachments: { filePath: string; fileName: string; fileSize: number; fileType: string }[] = []
 ): Promise<Message & { attachments: MessageAttachment[] }> => {
+    // Update conversation updatedAt for sorting
+    await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { updatedAt: new Date() }
+    });
+
     return prisma.message.create({
         data: {
             conversationId,
@@ -62,6 +145,9 @@ const sendMessage = async (
         },
         include: {
             attachments: true,
+            sender: {
+                select: { id: true, name: true, username: true }
+            }
         },
     });
 };
@@ -72,37 +158,52 @@ const sendMessage = async (
  * @returns {Promise<any[]>}
  */
 const getConversations = async (userId: number) => {
-    const conversations = await prisma.conversation.findMany({
-        where: {
-            OR: [
-                { user1Id: userId },
-                { user2Id: userId },
-            ],
-        },
+    const participations = await prisma.participant.findMany({
+        where: { userId },
         include: {
-            messages: {
-                orderBy: { createdAt: 'desc' },
-                take: 1,
-            },
+            conversation: {
+                include: {
+                    messages: {
+                        orderBy: { createdAt: 'desc' },
+                        take: 1,
+                        include: {
+                            sender: { select: { id: true, name: true, username: true } },
+                            attachments: true
+                        }
+                    },
+                    participants: {
+                        include: {
+                            user: {
+                                select: { id: true, name: true, username: true, role: true, departmentId: true, department: { select: { name: true } } }
+                            }
+                        }
+                    }
+                }
+            }
         },
-        orderBy: { updatedAt: 'desc' },
+        orderBy: { conversation: { updatedAt: 'desc' } } as any // Prisma sort might be tricky on nested include
     });
 
-    // Map to include other user info
-    return Promise.all(
-        conversations.map(async (conv) => {
-            const otherUserId = conv.user1Id === userId ? conv.user2Id : conv.user1Id;
-            const otherUser = await prisma.user.findUnique({
-                where: { id: otherUserId },
-                select: { id: true, name: true, username: true, role: true, departmentId: true, department: { select: { name: true } } },
-            });
-            return {
-                ...conv,
-                otherUser,
-                lastMessage: conv.messages[0] || null,
-            };
-        })
+    // Re-sort in JS because Prisma 4.x has limitations on nested sorting in findMany
+    const sorted = participations.sort((a, b) =>
+        new Date(b.conversation.updatedAt).getTime() - new Date(a.conversation.updatedAt).getTime()
     );
+
+    return sorted.map((p) => {
+        const conv = p.conversation;
+        let otherUser = null;
+
+        if (conv.type === 'DIRECT') {
+            const otherParticipant = conv.participants.find(part => part.userId !== userId);
+            otherUser = otherParticipant?.user || null;
+        }
+
+        return {
+            ...conv,
+            otherUser,
+            lastMessage: conv.messages[0] || null,
+        };
+    });
 };
 
 /**
@@ -116,7 +217,12 @@ const getMessages = async (conversationId: number, limit: number = 50, page: num
     const skip = (page - 1) * limit;
     const messages = await prisma.message.findMany({
         where: { conversationId },
-        include: { attachments: true },
+        include: {
+            attachments: true,
+            sender: {
+                select: { id: true, name: true, username: true }
+            }
+        },
         orderBy: { createdAt: 'desc' },
         take: limit,
         skip: skip,
@@ -135,6 +241,10 @@ const getMessages = async (conversationId: number, limit: number = 50, page: num
 
 export default {
     getOrCreateConversation,
+    createGroup,
+    addParticipants,
+    removeParticipant,
+    deleteConversation,
     sendMessage,
     getConversations,
     getMessages,

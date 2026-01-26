@@ -10,6 +10,16 @@ import { convertFileToPdf, isConvertibleFile } from '../services/conversion.serv
 
 import * as versionService from '../services/version.service';
 
+// Helper to fix UTF-8 encoding for fields coming from Multer/Busboy (defaults to latin1)
+const decodeUTF8 = (val: any) => {
+    if (typeof val !== 'string') return val;
+    try {
+        return Buffer.from(val, 'latin1').toString('utf8');
+    } catch (e) {
+        return val;
+    }
+};
+
 // Helper to get upload root (matches multer.ts logic)
 const getUploadRoot = () => {
     const PREFERRED_ROOT = 'G:\\DMS_DATA';
@@ -102,9 +112,9 @@ const saveDocumentFile = async (file: Express.Multer.File, departmentId: number 
     } catch (error: any) {
         console.error('Error saving file:', error);
         if (error.code === 'ENOSPC') {
-            throw new ApiError(httpStatus.INSUFFICIENT_STORAGE, 'Bá»™ nhá»› lÆ°u trá»¯ (G: Drive) Ä‘Ă£ Ä‘áº§y. Vui lĂ²ng giáº£i phĂ³ng bá»™ nhá»›.');
+            throw new ApiError(httpStatus.INSUFFICIENT_STORAGE, 'Bộ nhớ lưu trữ (G: Drive) đã đầy. Vui lòng giải phóng bộ nhớ.');
         }
-        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'KhĂ´ng thá»ƒ lÆ°u file vĂ o á»• Ä‘Ä©a G:');
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Không thể lưu file vào ổ đĩa G:');
     }
 };
 
@@ -127,9 +137,9 @@ const createDocument = catchAsync(async (req, res) => {
     };
 
     const cleanBody: any = {
-        title: req.body.title,
+        title: decodeUTF8(req.body.title),
         code: req.body.code,
-        description: req.body.description,
+        description: decodeUTF8(req.body.description),
         status: req.body.status || 'DRAFT',
         departmentId: req.body.departmentId ? parseInt(req.body.departmentId) : user.departmentId,
         categoryId: req.body.categoryId ? parseInt(req.body.categoryId) : undefined,
@@ -206,7 +216,7 @@ const createDocument = catchAsync(async (req, res) => {
     try {
         if (mainFile) {
             fileSize = mainFile.size;
-            let categoryName = 'ChÆ°a phĂ¢n loáº¡i';
+            let categoryName = 'Chưa phân loại';
             if (cleanBody.categoryId) {
                 const category = await prisma.category.findUnique({ where: { id: cleanBody.categoryId } });
                 if (category) categoryName = category.name;
@@ -248,7 +258,7 @@ const createDocument = catchAsync(async (req, res) => {
                 } catch (error: any) {
                     console.error('File to PDF conversion failed:', error);
                     // If conversion fails, we still have the original file at mainFile.path
-                    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Lá»—i chuyá»ƒn Ä‘á»•i file sang PDF: ${error.message}`);
+                    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Lỗi chuyển đổi file sang PDF: ${error.message}`);
                 }
             }
 
@@ -263,22 +273,44 @@ const createDocument = catchAsync(async (req, res) => {
                 };
 
                 for (const refFile of referenceFiles) {
-                    // Use original name for reference title/filename
-                    const refName = path.parse(refFile.originalname).name;
+                    // Auto-convert reference file to PDF if supported
+                    let fileToSave = refFile;
+                    let fileNameToSave = refFile.originalname;
+
+                    if (isConvertibleFile(refFile.path)) {
+                        try {
+                            console.log('Auto-converting reference file to PDF:', refFile.originalname);
+                            const pdfBuffer = await convertFileToPdf(refFile.path);
+                            const pdfPath = refFile.path.replace(/\.[^/.]+$/, "_ref.pdf");
+                            fs.writeFileSync(pdfPath, pdfBuffer);
+
+                            fileToSave = {
+                                ...refFile,
+                                path: pdfPath,
+                                originalname: refFile.originalname.replace(/\.[^/.]+$/, ".pdf"),
+                                mimetype: 'application/pdf'
+                            };
+                            fileNameToSave = fileToSave.originalname;
+
+                            // Cleanup temp original
+                            if (fs.existsSync(refFile.path)) fs.unlinkSync(refFile.path);
+                        } catch (err) {
+                            console.error('Ref conversion failed, saving original:', err);
+                        }
+                    }
+
+                    // Use original name (or .pdf name) for reference title/filename
+                    const refName = path.parse(fileNameToSave).name;
                     // Save to same Category folder
-                    const savedRefPath = await saveDocumentFile(refFile, cleanBody.departmentId, cleanBody.categoryId, refName);
+                    const savedRefPath = await saveDocumentFile(fileToSave, cleanBody.departmentId, cleanBody.categoryId, refName);
 
                     cleanBody.attachments.create.push({
                         filePath: savedRefPath,
-                        fileName: refFile.originalname,
-                        fileSize: refFile.size,
-                        fileType: refFile.mimetype,
+                        fileName: fileNameToSave,
+                        fileSize: fileToSave.size,
+                        fileType: fileToSave.mimetype,
                         createdBy: user.username
                     });
-
-                    // Remove from temp cleanup list as it's been moved/handled (saveDocumentFile usually moves it)
-                    // But saveDocumentFile handles copy/move. 
-                    // If saveDocumentFile moves it, the temp path is gone.
                 }
             }
 
@@ -307,7 +339,7 @@ const createDocument = catchAsync(async (req, res) => {
                     1,
                     versionPath,
                     fileSize,
-                    'Khá»Ÿi táº¡o tĂ i liá»‡u',
+                    'Khởi tạo tài liệu',
                     user.username,
                     user.name || user.username
                 );
@@ -457,13 +489,13 @@ const updateDocument = catchAsync(async (req, res) => {
     }
 
     if (!canEdit) {
-        throw new ApiError(httpStatus.FORBIDDEN, 'Báº¡n khĂ´ng cĂ³ quyá»n chá»‰nh sá»­a tĂ i liá»‡u nĂ y');
+        throw new ApiError(httpStatus.FORBIDDEN, 'Bạn không có quyền chỉnh sửa tài liệu này'); // Fixed garbled text
     }
 
     const updateBody: any = {
-        title: req.body.title,
+        title: decodeUTF8(req.body.title),
         code: req.body.code,
-        description: req.body.description,
+        description: decodeUTF8(req.body.description),
         status: req.body.status,
         categoryId: req.body.categoryId ? Number(req.body.categoryId) : undefined,
         visibility: req.body.visibility,
@@ -478,7 +510,7 @@ const updateDocument = catchAsync(async (req, res) => {
     // STRICT: Only Admin or QLCL can set "Confidential" (PRIVATE)
     if (updateBody.visibility === 'PRIVATE') {
         if (user.role !== 'ADMIN' && !user.department?.isSupervisory) {
-            throw new ApiError(httpStatus.FORBIDDEN, 'Báº¡n khĂ´ng cĂ³ quyá»n Ä‘áº·t tĂ i liá»‡u á»Ÿ Má»©c Ä‘á»™: Báº£o máº­t (03)');
+            throw new ApiError(httpStatus.FORBIDDEN, 'Bạn không có quyền đặt tài liệu ở Mức độ: Bảo mật (03)'); // Fixed garbled text
         }
     }
 
@@ -574,6 +606,25 @@ const updateDocument = catchAsync(async (req, res) => {
     const tempReferencePaths: string[] = [];
     referenceFiles.forEach(f => tempReferencePaths.push(f.path));
 
+    // Handle Signature Flow Status Transition
+    if (req.body.status === 'SIGNED') {
+        const remainingRequests = await prisma.signatureRequest.count({
+            where: {
+                documentId: Number(documentId),
+                userId: { not: Number(user.id) },
+                status: 'PENDING'
+            }
+        });
+
+        if (remainingRequests > 0) {
+            console.log(`[SIGN_FLOW] Document ${documentId} has ${remainingRequests} other signers pending. Keeping current status.`);
+            // Don't move document to SIGNED yet, keep current status
+            updateBody.status = existing.status;
+        } else {
+            console.log(`[SIGN_FLOW] Document ${documentId} - Last signer detected. Moving to SIGNED.`);
+        }
+    }
+
     try {
         if (mainFile) {
             // Auto-convert DOCX to PDF
@@ -609,11 +660,11 @@ const updateDocument = catchAsync(async (req, res) => {
                     console.log('Update conversion successful');
                 } catch (error: any) {
                     console.error('Update file to PDF conversion failed:', error);
-                    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Lá»—i chuyá»ƒn Ä‘á»•i file sang PDF: ${error.message}`);
+                    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Lỗi chuyển đổi file sang PDF: ${error.message}`); // Fixed garbled text
                 }
             }
 
-            let categoryName = 'ChÆ°a phĂ¢n loáº¡i';
+            let categoryName = 'Chưa phân loại';
             const catId = updateBody.categoryId ? parseInt(updateBody.categoryId) : existing?.categoryId;
             if (catId) {
                 const category = await prisma.category.findUnique({ where: { id: catId } });
@@ -656,7 +707,7 @@ const updateDocument = catchAsync(async (req, res) => {
                 fs.copyFileSync(updateBody.content, versionPath);
 
                 // Determine note
-                const changeNote = req.body.changeNote || `Cáº­p nháº­t file bá»Ÿi ${user.username}`;
+                const changeNote = decodeUTF8(req.body.changeNote) || `Cập nhật file bởi ${user.username}`;
 
                 await versionService.createVersion(
                     documentId,
@@ -682,7 +733,7 @@ const updateDocument = catchAsync(async (req, res) => {
                     data: {
                         documentId,
                         action: 'SIGNED',
-                        description: 'ÄĂ£ kĂ½ tĂ i liá»‡u',
+                        description: 'Đã ký tài liệu', // Fixed garbled text
                         createdBy: user.username,
                         departmentId: user.departmentId || existing.departmentId
                     }
@@ -811,7 +862,6 @@ const updateDocument = catchAsync(async (req, res) => {
             try {
                 const deletedIds = JSON.parse(req.body.deletedAttachmentIds);
                 if (Array.isArray(deletedIds) && deletedIds.length > 0) {
-                    // Fetch paths first to delete files
                     const attachmentsToDelete = await prisma.documentAttachment.findMany({
                         where: {
                             id: { in: deletedIds },
@@ -819,29 +869,68 @@ const updateDocument = catchAsync(async (req, res) => {
                         }
                     });
 
-                    // Delete files from disk
                     for (const att of attachmentsToDelete) {
                         try {
                             if (fs.existsSync(att.filePath)) {
                                 fs.unlinkSync(att.filePath);
-                                console.log(`Deleted attachment file: ${att.filePath}`);
                             }
                         } catch (err) {
                             console.error(`Failed to delete attachment file: ${att.filePath}`, err);
                         }
                     }
 
-                    // Delete from DB
                     await prisma.documentAttachment.deleteMany({
                         where: {
                             id: { in: deletedIds },
                             documentId: documentId
                         }
                     });
-                    console.log(`Deleted ${deletedIds.length} attachment records`);
                 }
             } catch (error) {
-                console.error("Error parsing/processing deletedAttachmentIds", error);
+                console.error("Error processing deletedAttachmentIds", error);
+            }
+        }
+
+        // Process NEW Reference Files (Attachments)
+        if (referenceFiles && referenceFiles.length > 0) {
+            for (const refFile of referenceFiles) {
+                let fileToSave = refFile;
+                let fileNameToSave = refFile.originalname;
+
+                if (isConvertibleFile(refFile.path)) {
+                    try {
+                        const pdfBuffer = await convertFileToPdf(refFile.path);
+                        const pdfPath = refFile.path.replace(/\.[^/.]+$/, "_ref.pdf");
+                        fs.writeFileSync(pdfPath, pdfBuffer);
+
+                        fileToSave = {
+                            ...refFile,
+                            path: pdfPath,
+                            originalname: refFile.originalname.replace(/\.[^/.]+$/, ".pdf"),
+                            mimetype: 'application/pdf'
+                        };
+                        fileNameToSave = fileToSave.originalname;
+                        if (fs.existsSync(refFile.path)) fs.unlinkSync(refFile.path);
+                    } catch (err) {
+                        console.error('Ref conversion failed in update:', err);
+                    }
+                }
+
+                const catId = updateBody.categoryId || existing.categoryId;
+                const deptId = updateBody.departmentId || existing.departmentId;
+                const refName = path.parse(fileNameToSave).name;
+                const savedRefPath = await saveDocumentFile(fileToSave, deptId, catId, refName);
+
+                await prisma.documentAttachment.create({
+                    data: {
+                        documentId: documentId,
+                        filePath: savedRefPath,
+                        fileName: fileNameToSave,
+                        fileSize: fileToSave.size,
+                        fileType: fileToSave.mimetype,
+                        createdBy: user.username
+                    }
+                });
             }
         }
 
@@ -850,7 +939,6 @@ const updateDocument = catchAsync(async (req, res) => {
     } catch (error) {
         throw error;
     } finally {
-        // ALWAYS cleanup the local temporary file if it still exists
         if (currentLocalPath && fs.existsSync(currentLocalPath)) {
             try {
                 fs.unlinkSync(currentLocalPath);
@@ -1212,7 +1300,7 @@ const approveDocument = catchAsync(async (req, res) => {
         data: {
             documentId,
             action: 'APPROVED',
-            description: comment || 'ÄĂ£ phĂª duyá»‡t tĂ i liá»‡u',
+            description: decodeUTF8(comment) || 'Đã phê duyệt tài liệu',
             createdBy: user.username,
             createdByName: user.name || user.username,
             departmentId: user.departmentId || document.departmentId // Fallback
@@ -1255,7 +1343,7 @@ const rejectDocument = catchAsync(async (req, res) => {
         data: {
             documentId,
             action: 'REJECTED',
-            description: comment || 'ÄĂ£ tá»« chá»‘i tĂ i liá»‡u',
+            description: decodeUTF8(comment) || 'Đã từ chối tài liệu',
             createdBy: user.username,
             createdByName: user.name || user.username,
             departmentId: user.departmentId || document.departmentId

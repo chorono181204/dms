@@ -17,13 +17,34 @@ export const io = new SocketServer(httpServer, {
   }
 });
 
-io.on('connection', (socket: Socket) => {
-  // Client sends userId upon connection (simple auth for now)
+io.on('connection', async (socket: Socket) => {
   const userId = socket.handshake.query.userId;
   if (userId) {
-    socket.join(`user_${userId}`);
-    logger.info(`User connected: ${userId}`);
+    const uid = parseInt(userId as string);
+    socket.join(`user_${uid}`);
+
+    try {
+      // Find all conversations this user is part of
+      const participations = await prisma.participant.findMany({
+        where: { userId: uid },
+        select: { conversationId: true }
+      });
+
+      participations.forEach(p => {
+        socket.join(`conv_${p.conversationId}`);
+      });
+
+      logger.info(`User ${uid} connected and joined ${participations.length} conversation rooms`);
+    } catch (error) {
+      logger.error('Error joining conversation rooms:', error);
+    }
   }
+
+  // Allow client to join a new conversation room on the fly
+  socket.on('join_conversation', (conversationId: number) => {
+    socket.join(`conv_${conversationId}`);
+    logger.info(`Socket ${socket.id} joined conv_${conversationId}`);
+  });
 
   socket.on('disconnect', () => {
     // console.log('Client disconnected');

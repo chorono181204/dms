@@ -25,3 +25,24 @@ export const sendMessage = async (data: FormData) => {
     });
     return response.data;
 };
+
+// Group Management
+export const createGroup = async (name: string, participantIds: number[]) => {
+    const response = await client.post(`${endpoint}/groups`, { name, participantIds });
+    return response.data;
+};
+
+export const addParticipants = async (conversationId: number, userIds: number[]) => {
+    const response = await client.post(`${endpoint}/groups/add`, { conversationId, userIds });
+    return response.data;
+};
+
+export const removeParticipant = async (conversationId: number, userId: number) => {
+    const response = await client.post(`${endpoint}/groups/remove`, { conversationId, userId });
+    return response.data;
+};
+
+export const deleteConversation = async (conversationId: number) => {
+    const response = await client.delete(`${endpoint}/conversations/${conversationId}`);
+    return response.data;
+};

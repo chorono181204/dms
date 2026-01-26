@@ -44,8 +44,10 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ visible, onClose, f
         if (!url) return '';
         if (url.startsWith('blob:')) return url;
         if (url.includes('token=')) return url;
+        const token = localStorage.getItem('accessToken');
+        if (!token) return url;
         const separator = url.includes('?') ? '&' : '?';
-        return `${url}${separator}token=${localStorage.getItem('accessToken') || ''}`;
+        return `${url}${separator}token=${token}`;
     };
 
     const getExtension = (name: string, url: string = '') => {
@@ -96,10 +98,17 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ visible, onClose, f
     const currentUrl = (activeFile?.url || '').toLowerCase();
     const currentExt = (activeFile?.extension || '').toLowerCase().replace('.', '');
 
-    const isPdf = currentExt === 'pdf' || currentName.endsWith('.pdf') || currentUrl.includes('.pdf');
-    const isDocx = currentExt === 'docx' || currentExt === 'doc' ||
-        currentName.endsWith('.docx') || currentName.endsWith('.doc') ||
-        currentUrl.includes('.docx') || currentUrl.includes('.doc');
+    const convertibleExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'];
+    const isPdf = convertibleExtensions.includes(currentExt) ||
+        convertibleExtensions.some(ext => currentName.endsWith(`.${ext}`));
+
+    // We can still keep isDocx for the special DOCX rendering if we want, 
+    // but the server now provides a PDF version for everything which is more consistent.
+    const isDocx = false;
+    const isDoc = false;
+    const isExcel = false;
+
+
 
     // Effect for DOCX rendering
     useEffect(() => {
@@ -137,7 +146,7 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ visible, onClose, f
             }
         } catch (error: any) {
             console.error('Failed to render word file:', error);
-            message.error(`Lỗi hiển thị DOCX: ${error.message || 'Không xác định'}`);
+            message.error(`Lỗi hiển thị ${activeFile?.extension.toUpperCase() || 'văn bản'}: ${error.message || 'Không xác định'}`);
         } finally {
             setLoading(false);
         }

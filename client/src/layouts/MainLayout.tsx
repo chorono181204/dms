@@ -24,7 +24,7 @@ import MyDocumentsPage from '../pages/MyDocumentsPage'
 
 import TemplateManagementPage from '../pages/TemplateManagementPage'
 import ApprovalPages from '../pages/ApprovalPages'
-import ReportsPage from '../pages/ReportsPage'
+// import ReportsPage from '../pages/ReportsPage' // Removed reports page
 import SettingsPages from '../pages/SettingsPages'
 import ConnectPage from '../pages/ConnectPage'
 import ProfilePage from '../pages/ProfilePage'
@@ -162,21 +162,28 @@ function MainLayout() {
     }
   ]
 
-  // Socket notification logic
+  // Initialize sound once
   useEffect(() => {
     notificationSound.current = new Audio('sound.mp3')
+  }, [])
 
+  // Socket notification logic
+  useEffect(() => {
     socketService.connect()
-    const handleGlobalMessage = (message: any) => {
-      // If we are not currently on the chat page, show notification
-      if (selectedKey !== 'chat' && message.senderId !== user?.id) {
-        setUnreadChatCount(prev => prev + 1)
 
-        // Play sound if enabled in settings (default true)
-        const soundEnabled = localStorage.getItem('chat_notification_sound') !== 'false'
-        if (soundEnabled) {
-          notificationSound.current?.play().catch(e => console.error('Audio play failed', e))
-        }
+    const handleGlobalMessage = (msg: any) => {
+      // Don't notify for my own messages
+      if (msg.senderId === user?.id) return
+
+      // Increment badge ONLY if not on chat page
+      if (selectedKey !== 'chat') {
+        setUnreadChatCount(prev => prev + 1)
+      }
+
+      // ALWAYS play sound for incoming messages from others
+      const soundEnabled = localStorage.getItem('chat_notification_sound') !== 'false'
+      if (soundEnabled) {
+        notificationSound.current?.play().catch(e => console.error('Audio play failed', e))
       }
     }
 
@@ -198,16 +205,25 @@ function MainLayout() {
       }
     };
 
+    const handleAddedToGroup = (conversationId: number) => {
+      socketService.joinConversation(conversationId);
+      // Optional: Play a sound or show a small alert
+      const soundEnabled = localStorage.getItem('chat_notification_sound') !== 'false'
+      if (soundEnabled) {
+        notificationSound.current?.play().catch(e => console.error('Audio play failed', e))
+      }
+    };
+
     socketService.onReceiveMessage(handleGlobalMessage)
-    // socketService.on('new_task', handleTaskEvent) -- Removed
-    // socketService.on('task_updated', handleTaskEvent) -- Removed
     socketService.on('new_notification', handleNewNotification)
-    socketService.on('receive_notification', handleNewNotification) // Alias
+    socketService.on('receive_notification', handleNewNotification)
+    socketService.on('added_to_group', handleAddedToGroup)
 
     return () => {
       socketService.offReceiveMessage(handleGlobalMessage)
       socketService.off('new_notification', handleNewNotification)
       socketService.off('receive_notification', handleNewNotification)
+      socketService.off('added_to_group', handleAddedToGroup)
     }
   }, [selectedKey, user?.id])
 
@@ -389,11 +405,11 @@ function MainLayout() {
                       { key: 'approval:history', label: 'Lịch sử phê duyệt / ký' },
                     ],
                   },
-                  {
-                    key: 'reports',
-                    icon: <BarChartOutlined />,
-                    label: 'Tìm kiếm & Báo cáo',
-                  },
+                  // {
+                  //   key: 'reports',
+                  //   icon: <BarChartOutlined />,
+                  //   label: 'Tìm kiếm & Báo cáo',
+                  // },
                   ...(user?.role === 'ADMIN' || user?.role === 'MANAGER' ? [{
                     key: 'settings',
                     icon: <SettingOutlined />,
@@ -579,8 +595,8 @@ function MainLayout() {
               {selectedKey === 'approval:pending-sign' && <ApprovalPages type="pending-sign" />}
               {selectedKey === 'approval:history' && <ApprovalPages type="history" />}
 
-              {/* Tìm kiếm & Báo cáo */}
-              {selectedKey === 'reports' && <ReportsPage />}
+              {/* Tìm kiếm & Báo cáo - REMOVED */}
+              {/* {selectedKey === 'reports' && <ReportsPage />} */}
 
               {/* Quản lý hệ thống */}
               {selectedKey === 'settings:users' && <SettingsPages type="users" />}

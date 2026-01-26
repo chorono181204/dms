@@ -100,22 +100,23 @@ export const createCompositeSignatureImage = (
                 return;
             }
 
-            const scale = 2; // For high DPI
+            // Dynamic scale: Ensure the signature image part is at least ~800px wide for crispness at high zoom
+            const scale = Math.max(4, 1000 / width);
 
             // Calculate height needed for text
             const baseFontSize = fontSizePt * scale;
-            const textPadding = 4 * scale;
+            const textPadding = 0;
             let textHeight = 0;
             if (userName) textHeight += baseFontSize + textPadding;
-            if (userPosition) textHeight += (baseFontSize * 0.85) + textPadding;
-            if (dateString) textHeight += (baseFontSize * 0.75) + textPadding; // Added height for date
+            if (userPosition) textHeight += (baseFontSize * 0.8) + textPadding;
+            if (dateString) textHeight += (baseFontSize * 0.7) + textPadding;
 
             // Prepare fonts for measurement
             // Ensure font family is quoted if it contains spaces
             const cleanFont = fontFamily.includes(' ') ? `"${fontFamily}"` : fontFamily;
             const nameFont = `bold ${baseFontSize}px ${cleanFont}, sans-serif`;
-            const positionFont = `normal ${baseFontSize * 0.85}px ${cleanFont}, sans-serif`;
-            const dateFont = `italic ${baseFontSize * 0.75}px ${cleanFont}, sans-serif`; // Added date font
+            const positionFont = `normal ${baseFontSize * 0.8}px ${cleanFont}, sans-serif`;
+            const dateFont = `italic ${baseFontSize * 0.7}px ${cleanFont}, sans-serif`; // Added date font
 
             // Measure text width
             let maxTextWidth = 0;
@@ -138,7 +139,7 @@ export const createCompositeSignatureImage = (
             // Canvas dimensions
             // Width is max of image width or text width (plus some padding for text)
             const imgWidth = width * scale;
-            const finalWidth = Math.max(imgWidth, maxTextWidth + (20 * scale));
+            const finalWidth = Math.max(imgWidth, maxTextWidth + (10 * scale));
 
             canvas.width = finalWidth;
             canvas.height = (height * scale) + textHeight + (10 * scale); // 10px extra padding
@@ -175,7 +176,11 @@ export const createCompositeSignatureImage = (
                 ctx.fillText(dateString, finalWidth / 2, currentY);
             }
 
-            resolve(canvas.toDataURL('image/png'));
+            resolve({
+                dataUrl: canvas.toDataURL('image/png'),
+                visualWidth: finalWidth / scale,
+                visualHeight: canvas.height / scale
+            });
         };
         img.onerror = (err) => reject(err);
         img.src = originalImageUrl;
