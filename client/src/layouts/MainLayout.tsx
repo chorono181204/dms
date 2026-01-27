@@ -172,20 +172,22 @@ function MainLayout() {
     socketService.connect()
 
     const handleGlobalMessage = (msg: any) => {
+      console.log('MainLayout: Received global message', msg);
       // Don't notify for my own messages
-      if (msg.senderId === user?.id) return
+      if (Number(msg.senderId) === Number(user?.id)) return;
 
-      // Increment badge ONLY if not on chat page
       if (selectedKey !== 'chat') {
-        setUnreadChatCount(prev => prev + 1)
+        setUnreadChatCount(prev => prev + 1);
       }
 
       // ALWAYS play sound for incoming messages from others
-      const soundEnabled = localStorage.getItem('chat_notification_sound') !== 'false'
-      if (soundEnabled) {
-        notificationSound.current?.play().catch(e => console.error('Audio play failed', e))
+      const soundEnabled = localStorage.getItem('chat_notification_sound') !== 'false';
+      console.log('MainLayout: Sound enabled:', soundEnabled);
+      if (soundEnabled && notificationSound.current) {
+        notificationSound.current.currentTime = 0;
+        notificationSound.current.play().catch(e => console.error('Audio play failed', e));
       }
-    }
+    };
 
     // Unified Notification Listener
     const handleNewNotification = (data: any) => {
@@ -200,8 +202,9 @@ function MainLayout() {
 
       // Play sound
       const soundEnabled = localStorage.getItem('chat_notification_sound') !== 'false'
-      if (soundEnabled) {
-        notificationSound.current?.play().catch(e => console.error('Audio play failed', e))
+      if (soundEnabled && notificationSound.current) {
+        notificationSound.current.currentTime = 0;
+        notificationSound.current.play().catch(e => console.error('Audio play failed', e))
       }
     };
 

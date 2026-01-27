@@ -273,7 +273,7 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
         try {
             message.loading({ content: 'Đang xử lý PDF...', key: 'signing' });
 
-            const pdfDoc = await import('pdf-lib').then(m => m.PDFDocument.load(pdfBytes));
+            const pdfDoc = await import('pdf-lib').then(m => m.PDFDocument.load(pdfBytes!));
             const pages = pdfDoc.getPages();
 
             for (const sig of signatures) {

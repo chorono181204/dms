@@ -5,7 +5,7 @@ const changePassword = async (data: any) => {
     return response.data;
 };
 
-const login = async (username, password) => {
+const login = async (username: string, password: string) => {
     const response = await client.post('/auth/login', { username, password });
     if (response.data.tokens) {
         localStorage.setItem('accessToken', response.data.tokens.access.token);

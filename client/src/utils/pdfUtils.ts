@@ -31,7 +31,7 @@ export const embedSignatureInPdf = async (
     const signatureImageBytes = await fetch(signatureImageUrl).then(res => res.arrayBuffer());
 
     // Embed the PNG image
-    const signatureImage = await pdfDoc.embedPng(signatureImageBytes);
+    const signatureImage = await pdfDoc.embedPng(new Uint8Array(signatureImageBytes));
 
     // Get the page
     const pages = pdfDoc.getPages();

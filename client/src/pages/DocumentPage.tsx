@@ -551,9 +551,9 @@ const DocumentPage: React.FC = () => {
                             const currentFolder = breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1] : null;
                             const isVirtual = currentFolderId && currentFolder && !(
                                 user.role === 'ADMIN' ||
-                                currentFolder.isGlobal ||
-                                currentFolder.createdBy === user.username ||
-                                currentFolder.departmentId === user.departmentId
+                                (currentFolder && currentFolder.isGlobal) ||
+                                (currentFolder && currentFolder.createdBy === user.username) ||
+                                (currentFolder && currentFolder.departmentId === user.departmentId)
                             );
                             const canAdd = !currentFolderId || !isVirtual;
 

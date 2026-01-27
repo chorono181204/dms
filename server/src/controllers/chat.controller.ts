@@ -6,6 +6,7 @@ import ApiError from '../utils/ApiError';
 import chatService from '../services/chat.service';
 import pick from '../utils/pick';
 import { io } from '../index';
+import prisma from '../client';
 
 // Helper to get upload root (consistent with document controller)
 const getUploadRoot = () => {
@@ -181,8 +182,20 @@ const sendMessage = catchAsync(async (req, res) => {
         attachments
     );
 
-    // CRITICAL: Emit to context room instead of specific user
-    io.to(`conv_${conversationId}`).emit('receive_message', message);
+    // Get all participants to ensure everyone receives the message even if not in the conv room
+    const participants = await prisma.participant.findMany({
+        where: { conversationId: parseInt(conversationId) },
+        select: { userId: true }
+    });
+
+    // Create a list of rooms to emit to (conv room + individual user rooms)
+    const targetRooms = [`conv_${conversationId}`];
+    participants.forEach((p: any) => {
+        targetRooms.push(`user_${p.userId}`);
+    });
+
+    // Emit to all target rooms (Socket.io handles de-duplication for same socket in multiple rooms)
+    io.to(targetRooms).emit('receive_message', message);
 
     res.status(httpStatus.CREATED).send(message);
 });
