@@ -10,7 +10,7 @@ import path from 'path';
  * @param {Object} documentBody
  * @returns {Promise<Document>}
  */
-const createDocument = async (documentBody: Prisma.DocumentUncheckedCreateInput): Promise<Document> => {
+const createDocument = async (documentBody: any): Promise<Document> => {
     return prisma.document.create({
         data: documentBody
     });
@@ -83,7 +83,7 @@ const queryDocuments = async (
                     select: { id: true, name: true }
                 },
                 permissions: {
-                    select: { userId: true, permission: true }
+                    select: { userId: true, departmentId: true, permission: true }
                 },
                 attachments: true
             }
@@ -116,7 +116,7 @@ const getDocumentById = async (id: number): Promise<Document | null> => {
                 orderBy: { id: 'desc' }
             },
             permissions: {
-                select: { userId: true, permission: true }
+                select: { userId: true, departmentId: true, permission: true }
             },
             attachments: true
         }

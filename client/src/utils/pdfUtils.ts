@@ -88,7 +88,7 @@ export const createCompositeSignatureImage = (
     dateString?: string, // Added dateString parameter
     fontFamily: string = 'Arial',
     fontSizePt: number = 14
-): Promise<string> => {
+): Promise<{ dataUrl: string, visualWidth: number, visualHeight: number }> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = 'Anonymous';
@@ -105,18 +105,17 @@ export const createCompositeSignatureImage = (
 
             // Calculate height needed for text
             const baseFontSize = fontSizePt * scale;
-            const textPadding = 0;
+            const lineSpacing = 1.1; // More standard line spacing
             let textHeight = 0;
-            if (userName) textHeight += baseFontSize + textPadding;
-            if (userPosition) textHeight += (baseFontSize * 0.8) + textPadding;
-            if (dateString) textHeight += (baseFontSize * 0.7) + textPadding;
+            if (userName) textHeight += baseFontSize * lineSpacing;
+            if (userPosition) textHeight += (baseFontSize * 0.8) * lineSpacing;
+            if (dateString) textHeight += (baseFontSize * 0.7) * lineSpacing;
 
             // Prepare fonts for measurement
-            // Ensure font family is quoted if it contains spaces
             const cleanFont = fontFamily.includes(' ') ? `"${fontFamily}"` : fontFamily;
             const nameFont = `bold ${baseFontSize}px ${cleanFont}, sans-serif`;
             const positionFont = `normal ${baseFontSize * 0.8}px ${cleanFont}, sans-serif`;
-            const dateFont = `italic ${baseFontSize * 0.7}px ${cleanFont}, sans-serif`; // Added date font
+            const dateFont = `italic ${baseFontSize * 0.7}px ${cleanFont}, sans-serif`;
 
             // Measure text width
             let maxTextWidth = 0;
@@ -130,49 +129,49 @@ export const createCompositeSignatureImage = (
                 const metrics = ctx.measureText(`(${userPosition})`);
                 maxTextWidth = Math.max(maxTextWidth, metrics.width);
             }
-            if (dateString) { // Measure date width
+            if (dateString) {
                 ctx.font = dateFont;
                 const metrics = ctx.measureText(dateString);
                 maxTextWidth = Math.max(maxTextWidth, metrics.width);
             }
 
             // Canvas dimensions
-            // Width is max of image width or text width (plus some padding for text)
             const imgWidth = width * scale;
-            const finalWidth = Math.max(imgWidth, maxTextWidth + (10 * scale));
+            const imgHeight = height * scale;
+            const finalWidth = Math.max(imgWidth, maxTextWidth + (20 * scale));
 
+            // Minimal overlap to keep it tight but safe
+            const overlap = 4 * scale;
             canvas.width = finalWidth;
-            canvas.height = (height * scale) + textHeight + (10 * scale); // 10px extra padding
+            canvas.height = imgHeight + textHeight - overlap;
 
             // 2. Draw Signature Image (Centered)
-            const drawW = width * scale;
-            const drawH = height * scale;
-            const imgX = (finalWidth - drawW) / 2;
-            ctx.drawImage(img, imgX, 0, drawW, drawH);
+            const imgX = (finalWidth - imgWidth) / 2;
+            ctx.drawImage(img, imgX, 0, imgWidth, imgHeight);
 
             // 3. Draw Text (Centered)
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
             ctx.fillStyle = '#000000';
 
-            let currentY = drawH + textPadding;
+            let currentY = imgHeight - overlap;
 
             if (userName) {
                 ctx.font = nameFont;
                 ctx.fillText(userName, finalWidth / 2, currentY);
-                currentY += baseFontSize + textPadding;
+                currentY += baseFontSize * lineSpacing;
             }
 
             if (userPosition) {
                 ctx.font = positionFont;
                 ctx.fillStyle = '#666666';
                 ctx.fillText(`(${userPosition})`, finalWidth / 2, currentY);
-                currentY += (baseFontSize * 0.85) + textPadding;
+                currentY += (baseFontSize * 0.8) * lineSpacing;
             }
 
-            if (dateString) { // Draw date
+            if (dateString) {
                 ctx.font = dateFont;
-                ctx.fillStyle = '#000000'; // Black color for date
+                ctx.fillStyle = '#000000';
                 ctx.fillText(dateString, finalWidth / 2, currentY);
             }
 

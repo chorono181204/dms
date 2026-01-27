@@ -15,9 +15,12 @@ export interface Template {
         name: string;
     };
     isActive: boolean;
+    visibility: string;
+    accessLevel: string;
+    permissions?: any[];
     createdBy?: string;
     updatedBy?: string;
-    createdAt?: string; // Standard format from backend
+    createdAt?: string;
     updatedAt?: string;
 }
 

@@ -15,12 +15,25 @@ const upload = multer({ dest: 'uploads/' });
 
 // Helper to fix UTF-8 encoding for fields coming from Multer/Busboy (defaults to latin1)
 const decodeUTF8 = (val: any) => {
-    if (typeof val !== 'string') return val;
+    if (typeof val !== 'string' || !val) return val;
+    // If string already contains characters > 255, it's already a proper Unicode string
+    for (let i = 0; i < val.length; i++) {
+        if (val.charCodeAt(i) > 255) return val;
+    }
     try {
         return Buffer.from(val, 'latin1').toString('utf8');
     } catch (e) {
         return val;
     }
+};
+
+// Helper to safely encode Content-Disposition header for Vietnamese filenames
+const getSafeContentDisposition = (type: 'inline' | 'attachment', filename: string) => {
+    // Basic sanitization for the quoted-string part (ASCII-only fallback)
+    const asciiName = filename.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_');
+    // Proper RFC 5987 encoding
+    const encodedName = encodeURIComponent(filename).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    return `${type}; filename="${asciiName}"; filename*=UTF-8''${encodedName}`;
 };
 
 /**
@@ -202,10 +215,38 @@ const downloadFile = catchAsync(async (req, res) => {
         }
     }
 
-    // Dynamic Watermark & Conversion Logic
+    // Dynamic Watermark & Conversion Logic - Move document lookup up to decide on conversion
+    const normalizedPath = filePath.replace(/\//g, '\\');
+    let doc = await prisma.document.findFirst({
+        where: { content: normalizedPath },
+        include: { department: true }
+    }) as any;
+
+    if (!doc) {
+        const version = await prisma.documentVersion.findFirst({
+            where: { filePath: normalizedPath }
+        });
+        if (version) {
+            doc = await prisma.document.findUnique({
+                where: { id: version.documentId },
+                include: { department: true }
+            });
+        }
+    }
+
     const ext = path.extname(filePath).toLowerCase();
     let pdfBuffer: Buffer | null = null;
     let isConverted = false;
+
+    // Logic for skipping conversion:
+    // 1. If it's a .docx, only convert if we found the document in DB and it's NOT a template (to apply watermarks).
+    // 2. For other convertible files (.doc, .xls, .txt), convert if no document found OR it's not a template.
+    const isDocx = ext === '.docx';
+    const shouldConvert = isInline && isConvertibleFile(filePath) && (
+        isDocx
+            ? (doc && !doc.isReference) // For docx, ONLY convert if we have a non-template record (to watermark)
+            : (!doc || !doc.isReference) // For others, convert if unknown or non-template
+    );
 
     if (ext === '.pdf') {
         try {
@@ -213,7 +254,7 @@ const downloadFile = catchAsync(async (req, res) => {
         } catch (e) {
             console.error('Failed to read PDF file:', e);
         }
-    } else if (isInline && isConvertibleFile(filePath)) {
+    } else if (shouldConvert) {
         try {
             console.log('On-the-fly converting to PDF for preview:', filePath);
             pdfBuffer = await convertFileToPdf(filePath);
@@ -224,12 +265,6 @@ const downloadFile = catchAsync(async (req, res) => {
     }
 
     if (pdfBuffer) {
-        // Find the document to get its status
-        const doc = await prisma.document.findFirst({
-            where: { content: filePath },
-            include: { department: true }
-        }) as any;
-
         if (doc) {
             let watermarkType: WatermarkType | null = null;
             const isExpired = doc.expirationDate && new Date(doc.expirationDate) < new Date();
@@ -237,7 +272,7 @@ const downloadFile = catchAsync(async (req, res) => {
             if (isExpired) {
                 watermarkType = WatermarkType.OBSOLETE;
             } else if (doc.isReference) {
-                watermarkType = WatermarkType.REFERENCE;
+                watermarkType = null; // No watermark for templates/reference
             } else if (doc.status === 'DRAFT' || doc.status === 'PENDING') {
                 watermarkType = WatermarkType.DRAFT;
             } else if (doc.status === 'APPROVED' || doc.status === 'SIGNED') {
@@ -245,6 +280,8 @@ const downloadFile = catchAsync(async (req, res) => {
             } else if (doc.status === 'ARCHIVED' || doc.status === 'REJECTED') {
                 watermarkType = WatermarkType.OBSOLETE;
             }
+
+            console.log(`[WATERMARK] Applying ${watermarkType} to ${doc.title} (Visibility: ${doc.visibility})`);
 
             if (watermarkType || doc.visibility) {
                 try {
@@ -258,23 +295,22 @@ const downloadFile = catchAsync(async (req, res) => {
 
                     res.setHeader('Content-Type', 'application/pdf');
                     const fileName = isConverted ? path.basename(filePath).replace(/\.[^/.]+$/, ".pdf") : path.basename(filePath);
-                    if (isInline) {
-                        res.setHeader('Content-Disposition', 'inline; filename="' + fileName + '"');
-                    } else {
-                        res.setHeader('Content-Disposition', 'attachment; filename="' + fileName + '"');
-                    }
+                    res.setHeader('Content-Disposition', getSafeContentDisposition(isInline ? 'inline' : 'attachment', fileName));
                     res.send(Buffer.from(modifiedPdf));
                     return;
                 } catch (error) {
                     console.error('Error applying watermark:', error);
                 }
             }
+        } else {
+            console.log(`[WATERMARK] No document found for path: ${filePath}`);
         }
 
         // If no watermark applied but we have a converted PDF buffer, send it anyway
         if (isConverted) {
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', 'inline; filename="' + path.basename(filePath).replace(/\.[^/.]+$/, ".pdf") + '"');
+            const convertedName = path.basename(filePath).replace(/\.[^/.]+$/, ".pdf");
+            res.setHeader('Content-Disposition', getSafeContentDisposition('inline', convertedName));
             res.send(pdfBuffer);
             return;
         }
@@ -317,13 +353,11 @@ const viewFile = catchAsync(async (req, res) => {
 
     // Permission check for non-Admin users
     if (user.role !== 'ADMIN') {
-        // 1. Try to find the document this file belongs to
         let doc = await prisma.document.findFirst({
             where: { content: filePath },
             include: { permissions: true }
         });
 
-        // 2. If not found in main content, check versions
         if (!doc) {
             const version = await prisma.documentVersion.findFirst({
                 where: { filePath: filePath }
@@ -336,28 +370,20 @@ const viewFile = catchAsync(async (req, res) => {
             }
         }
 
-        // 3. If it's a document file, enforce permissions
         if (doc) {
             const isOwner = doc.createdBy === user.username;
             const isSupervisory = user.department?.isSupervisory;
             const userPermission = doc.permissions?.find((p: any) => Number(p.userId) === Number(user.id));
 
-            // View check: Owner, Supervisor (for DEPARTMENT/PUBLIC), Explicit Permission, or Public visibility, or same department
             let canView = isOwner || userPermission ||
                 (doc.visibility === 'PUBLIC') ||
                 (doc.visibility === 'DEPARTMENT' && (doc.departmentId === user.departmentId || isSupervisory));
 
-            // Also check if user has an active Signature Request (allow viewing to sign)
             if (!canView) {
                 const sigReq = await prisma.signatureRequest.findFirst({
-                    where: {
-                        documentId: doc.id,
-                        userId: user.id,
-                    }
+                    where: { documentId: doc.id, userId: user.id }
                 });
-                if (sigReq) {
-                    canView = true;
-                }
+                if (sigReq) canView = true;
             }
 
             if (!canView) {
@@ -366,10 +392,36 @@ const viewFile = catchAsync(async (req, res) => {
         }
     }
 
-    // Dynamic Watermark & Conversion Logic
+    // Dynamic Watermark & Conversion Logic - Consistent with downloadFile
+    const normalizedPath = filePath.replace(/\//g, '\\');
+    let doc = await prisma.document.findFirst({
+        where: { content: normalizedPath },
+        include: { department: true }
+    }) as any;
+
+    if (!doc) {
+        const version = await prisma.documentVersion.findFirst({
+            where: { filePath: normalizedPath }
+        });
+        if (version) {
+            doc = await prisma.document.findUnique({
+                where: { id: version.documentId },
+                include: { department: true }
+            });
+        }
+    }
+
     const ext = path.extname(filePath).toLowerCase();
     let pdfBuffer: Buffer | null = null;
     let isConverted = false;
+
+    // Skip conversion for templates (isReference)
+    const isDocx = ext === '.docx';
+    const shouldConvert = isConvertibleFile(filePath) && (
+        isDocx
+            ? (doc && !doc.isReference)
+            : (!doc || !doc.isReference)
+    );
 
     if (ext === '.pdf') {
         try {
@@ -377,7 +429,7 @@ const viewFile = catchAsync(async (req, res) => {
         } catch (e) {
             console.error('Failed to read PDF file for view:', e);
         }
-    } else if (!isChatUpload && isConvertibleFile(filePath)) {
+    } else if (shouldConvert) {
         try {
             console.log('On-the-fly converting to PDF for view:', filePath);
             pdfBuffer = await convertFileToPdf(filePath);
@@ -388,27 +440,15 @@ const viewFile = catchAsync(async (req, res) => {
     }
 
     if (pdfBuffer) {
-        // Find the document to get its status
-        const doc = await prisma.document.findFirst({
-            where: { content: filePath },
-            include: { department: true }
-        }) as any;
-
         if (doc) {
             let watermarkType: WatermarkType | null = null;
             const isExpired = doc.expirationDate && new Date(doc.expirationDate) < new Date();
 
-            if (isExpired) {
-                watermarkType = WatermarkType.OBSOLETE;
-            } else if (doc.isReference) {
-                watermarkType = WatermarkType.REFERENCE;
-            } else if (doc.status === 'DRAFT' || doc.status === 'PENDING') {
-                watermarkType = WatermarkType.DRAFT;
-            } else if (doc.status === 'APPROVED' || doc.status === 'SIGNED') {
-                watermarkType = WatermarkType.APPROVED;
-            } else if (doc.status === 'ARCHIVED' || doc.status === 'REJECTED') {
-                watermarkType = WatermarkType.OBSOLETE;
-            }
+            if (isExpired) watermarkType = WatermarkType.OBSOLETE;
+            else if (doc.isReference) watermarkType = null;
+            else if (doc.status === 'DRAFT' || doc.status === 'PENDING') watermarkType = WatermarkType.DRAFT;
+            else if (doc.status === 'APPROVED' || doc.status === 'SIGNED') watermarkType = WatermarkType.APPROVED;
+            else if (doc.status === 'ARCHIVED' || doc.status === 'REJECTED') watermarkType = WatermarkType.OBSOLETE;
 
             if (watermarkType || doc.visibility) {
                 try {
@@ -421,7 +461,8 @@ const viewFile = catchAsync(async (req, res) => {
                     });
 
                     res.setHeader('Content-Type', 'application/pdf');
-                    res.setHeader('Content-Disposition', 'inline; filename="' + path.basename(filePath).replace(/\.[^/.]+$/, ".pdf") + '"');
+                    const fileName = path.basename(filePath).replace(/\.[^/.]+$/, ".pdf");
+                    res.setHeader('Content-Disposition', getSafeContentDisposition('inline', fileName));
                     res.setHeader('Content-Security-Policy', "");
                     res.setHeader('X-Frame-Options', 'ALLOWALL');
                     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -433,27 +474,27 @@ const viewFile = catchAsync(async (req, res) => {
             }
         }
 
-        // Send converted PDF even if no watermark
         if (isConverted) {
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', 'inline; filename="' + path.basename(filePath).replace(/\.[^/.]+$/, ".pdf") + '"');
+            const fileName = path.basename(filePath).replace(/\.[^/.]+$/, ".pdf");
+            res.setHeader('Content-Disposition', getSafeContentDisposition('inline', fileName));
             res.send(pdfBuffer);
             return;
         }
     }
 
-    // Serve file inline (Fallback for non-convertible files or original files)
-    res.setHeader('Content-Disposition', 'inline; filename="' + path.basename(filePath) + '"');
-    res.setHeader('Content-Security-Policy', ""); // Allow displaying in img tag
+    // Serve file inline fallback
+    res.setHeader('Content-Disposition', getSafeContentDisposition('inline', path.basename(filePath)));
+    res.setHeader('Content-Security-Policy', "");
     res.setHeader('X-Frame-Options', 'ALLOWALL');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
-    // Set correct Content-Type based on extension
     const currentExt = path.extname(filePath).toLowerCase();
     if (currentExt === '.png') res.setHeader('Content-Type', 'image/png');
     else if (currentExt === '.jpg' || currentExt === '.jpeg') res.setHeader('Content-Type', 'image/jpeg');
     else if (currentExt === '.gif') res.setHeader('Content-Type', 'image/gif');
     else if (currentExt === '.pdf') res.setHeader('Content-Type', 'application/pdf');
+    else if (currentExt === '.docx') res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
     res.sendFile(path.resolve(filePath));
 });

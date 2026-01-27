@@ -26,8 +26,10 @@ model Department {
   updatedBy String?
 
   // Security Flag
-  isSupervisory Boolean @default(false)
-  tasks         Task[]
+  isSupervisory       Boolean              @default(false)
+  tasks               Task[]
+  documentPermissions DocumentPermission[]
+  templatePermissions TemplatePermission[]
 }
 
 model User {
@@ -49,7 +51,8 @@ model User {
   digitalCert    String? // Serial number của chứng thư số
 
   // Quan hệ văn bản - REMOVED RELATIONS TO DECOUPLE
-  permissions DocumentPermission[]
+  permissions         DocumentPermission[]
+  templatePermissions TemplatePermission[]
 
   // Auth
   // Token relation removed
@@ -84,8 +87,34 @@ model Template {
 
   isActive Boolean @default(true)
 
+  // Phân quyền nâng cao
+  visibility  String               @default("PRIVATE") // PRIVATE, DEPARTMENT, PUBLIC
+  accessLevel String               @default("VIEW") // VIEW, EDIT
+  permissions TemplatePermission[]
+
   createdBy String?
   updatedBy String?
+}
+
+model TemplatePermission {
+  id Int @id @default(autoincrement())
+
+  templateId Int
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  // Quyền: "VIEW", "EDIT", "DOWNLOAD"
+  permission String
+
+  createdBy String?
+  updatedBy String?
+
+  @@unique([templateId, userId, departmentId, permission])
 }
 
 // 2.1 Danh mục tài liệu
@@ -196,16 +225,19 @@ model DocumentPermission {
   documentId Int
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
-  userId Int
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Quyền: "VIEW", "EDIT", "SIGN", "APPROVE"
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  // Quyền: "VIEW", "EDIT", "SIGN", "APPROVE", "DOWNLOAD"
   permission String
 
   createdBy String?
   updatedBy String?
 
-  @@unique([documentId, userId, permission])
+  @@unique([documentId, userId, departmentId, permission])
 }
 
 // 4. Chữ ký & Lịch sử
@@ -251,6 +283,8 @@ model DocumentHistory {
   // Data Isolation
   departmentId Int
   department   Department @relation(fields: [departmentId], references: [id])
+
+  createdAt DateTime @default(now())
 }
 
 // 5. Quy trình trình ký

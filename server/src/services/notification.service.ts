@@ -23,19 +23,8 @@ const createNotification = async (
             }
         });
 
-        // Emit real-time event
+        // Emit real-time event ONLY to the specific user's room
         io.to(`user_${userId}`).emit('receive_notification', notification);
-        /* Note: Make sure the socket room logic is set up. 
-           If not using rooms per user, iterate or rely on client filtering.
-           Currently we check receiverId in client, so we can emit 'new_notification' globally 
-           or to specific room if implemented. 
-           
-           Let's emit 'new_notification' with receiverId to match existing pattern.
-        */
-        io.emit('new_notification', {
-            ...notification,
-            receiverId: userId
-        });
 
         return notification;
     } catch (error) {

@@ -578,7 +578,7 @@ const MyDocumentsPage: React.FC = () => {
 
     const canView = isOwner || isAdmin || userPermission || (record.visibility === 'PUBLIC') || hasDepartmentAccess;
     const isManagerOfDept = currentUser.role === 'MANAGER' && record.departmentId === currentUser.departmentId;
-    const canEdit = isOwner || isAdmin || isManagerOfDept || (userPermission?.permission === 'EDIT');
+    const canEdit = isOwner || isAdmin || isManagerOfDept || (userPermission?.permission === 'EDIT') || (canView && record.accessLevel === 'EDIT');
     const canSign = isOwner || isAdmin || (userPermission?.permission === 'SIGN');
     const canDelete = isOwner || isAdmin || isManagerOfDept;
 
@@ -871,7 +871,16 @@ const MyDocumentsPage: React.FC = () => {
                     key={doc.id}
                     document={doc}
                     menuItems={getMenuItems(doc)}
-                    canDrag={currentUser.role === 'ADMIN' || currentUser.role === 'MANAGER' || doc.createdBy === currentUser.username}
+                    canDrag={(() => {
+                      const isOwner = doc.createdBy === currentUser.username;
+                      const isAdmin = currentUser.role === 'ADMIN';
+                      const isManagerOfDept = currentUser.role === 'MANAGER' && doc.departmentId === currentUser.departmentId;
+                      const userPermission = doc.permissions?.find((p: any) => Number(p.userId) === Number(currentUser.id));
+                      const isSupervisory = currentUser.department?.isSupervisory;
+                      const hasDepartmentAccess = doc.visibility === 'DEPARTMENT' && (doc.departmentId === currentUser.departmentId || isSupervisory);
+                      const canView = isOwner || isAdmin || userPermission || (doc.visibility === 'PUBLIC') || hasDepartmentAccess;
+                      return isOwner || isAdmin || isManagerOfDept || (userPermission?.permission === 'EDIT') || (canView && doc.accessLevel === 'EDIT');
+                    })()}
                   />
                 </Col>
               ))}
@@ -910,7 +919,10 @@ const MyDocumentsPage: React.FC = () => {
                   const isAdmin = currentUser.role === 'ADMIN';
                   const isManagerOfDept = currentUser.role === 'MANAGER' && record.departmentId === currentUser.departmentId;
                   const userPermission = record.permissions?.find((p: any) => Number(p.userId) === Number(currentUser.id));
-                  canDrag = isOwner || isAdmin || isManagerOfDept || userPermission?.permission === 'EDIT';
+                  const isSupervisory = currentUser.department?.isSupervisory;
+                  const hasDepartmentAccess = record.visibility === 'DEPARTMENT' && (record.departmentId === currentUser.departmentId || isSupervisory);
+                  const canView = isOwner || isAdmin || userPermission || (record.visibility === 'PUBLIC') || hasDepartmentAccess;
+                  canDrag = isOwner || isAdmin || isManagerOfDept || (userPermission?.permission === 'EDIT') || (canView && record.accessLevel === 'EDIT');
                 }
                 return {
                   record,
@@ -1028,13 +1040,17 @@ const MyDocumentsPage: React.FC = () => {
             const isAdmin = currentUser.role === 'ADMIN';
 
             const userPermission = doc.permissions?.find((p: any) => Number(p.userId) === Number(currentUser.id));
-            const hasExplicitDownload = userPermission?.permission === 'DOWNLOAD' || userPermission?.permission === 'EDIT';
+            const isSupervisory = currentUser.department?.isSupervisory;
+            const hasDepartmentAccess = doc.visibility === 'DEPARTMENT' && (doc.departmentId === currentUser.departmentId || isSupervisory);
+            const canView = isOwner || isAdmin || userPermission || (doc.visibility === 'PUBLIC') || hasDepartmentAccess;
+
+            const hasExplicitDownload = userPermission?.permission === 'DOWNLOAD' || userPermission?.permission === 'EDIT' || userPermission?.permission === 'SIGN';
 
             return (
               isAdmin ||
               isOwner ||
               hasExplicitDownload ||
-              (!userPermission && doc.visibility !== 'PRIVATE')
+              (canView && doc.visibility !== 'PRIVATE' && doc.accessLevel !== 'VIEW')
             );
           })() : true}
         />
@@ -1066,7 +1082,8 @@ const MyDocumentsPage: React.FC = () => {
             try {
               const formData = new FormData();
               formData.append('file', blob, signatureDocTitle + '_signed.pdf');
-              formData.append('status', 'SIGNED');
+              formData.append('action', 'SIGNED');
+              // formData.append('status', 'SIGNED'); // User will update manually
 
               await updateDocument(signatureDocId, formData);
 

@@ -219,20 +219,11 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                                         // Don't show current user (can't assign to yourself)
                                         if (u.id === currentUser?.id) return false;
 
-                                        // Never show ADMIN in the list
+                                        // Admin overlap: hide all Admins
                                         if (u.role === 'ADMIN') return false;
 
-                                        // Chief Technician Restriction: Can ONLY assign to regular USERs
-                                        if (currentUser?.isChief) {
-                                            return u.role === 'USER';
-                                        }
-
-                                        // For Managers/Admins: can assign to USERs and Chiefs
-                                        // Exclude other Managers (unless they are Chief)
-                                        if (u.role === 'MANAGER' && !u.isChief) {
-                                            return false;
-                                        }
-
+                                        // Allow Managers to assign to USERs, Chief Technicians, 
+                                        // and other Managers (to avoid empty list in dev/sparse data)
                                         return true;
                                     })
                                     .map(u => (
@@ -307,7 +298,10 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                                         </div>
                                         <div style={{ marginTop: 4 }}>
                                             {item.type === 'RESULT' && <span style={{ fontWeight: 'bold', color: '#1890ff', marginRight: 8 }}>[Báo cáo kết quả]</span>}
-                                            {item.content}
+                                            {item.type === 'SYSTEM' && <span style={{ fontStyle: 'italic', color: '#8c8c8c', marginRight: 8 }}>[Hệ thống]</span>}
+                                            <span style={item.type === 'SYSTEM' ? { fontStyle: 'italic', color: '#595959' } : {}}>
+                                                {item.content}
+                                            </span>
                                         </div>
                                         {item.attachments && item.attachments.length > 0 && (
                                             <div style={{ marginTop: 8 }}>

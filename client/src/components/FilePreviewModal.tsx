@@ -99,14 +99,11 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ visible, onClose, f
     const currentExt = (activeFile?.extension || '').toLowerCase().replace('.', '');
 
     const convertibleExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'];
-    const isPdf = convertibleExtensions.includes(currentExt) ||
-        convertibleExtensions.some(ext => currentName.endsWith(`.${ext}`));
+    const isDocx = currentExt === 'docx' || currentName.endsWith('.docx');
+    const isDoc = currentExt === 'doc' || currentName.endsWith('.doc');
+    const isExcel = ['xls', 'xlsx'].includes(currentExt);
 
-    // We can still keep isDocx for the special DOCX rendering if we want, 
-    // but the server now provides a PDF version for everything which is more consistent.
-    const isDocx = false;
-    const isDoc = false;
-    const isExcel = false;
+    const isPdf = currentExt === 'pdf' || (convertibleExtensions.includes(currentExt) && !isDocx);
 
 
 

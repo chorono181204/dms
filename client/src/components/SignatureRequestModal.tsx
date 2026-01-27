@@ -38,8 +38,8 @@ const SignatureRequestModal: React.FC<SignatureRequestModalProps> = ({ visible, 
     const fetchUsers = async () => {
         try {
             // const currentUser = ... (moved to hook)
-            const result = await getUsers({ limit: 1000 });
-            setUsers(result.results.filter((u: any) => u.id !== currentUser.id) || []);
+            const result = await getUsers({ limit: 1000, scope: 'all' });
+            setUsers(result.results.filter((u: any) => u.id !== currentUser.id && u.role !== 'ADMIN') || []);
         } catch (error) {
             console.error('Failed to fetch users');
         }
@@ -120,7 +120,7 @@ const SignatureRequestModal: React.FC<SignatureRequestModalProps> = ({ visible, 
                         >
                             {users.map(u => (
                                 <Option key={u.id} value={u.id}>
-                                    {u.name || u.username} - {u.department?.name || '---'}
+                                    {u.name || u.username} {u.department?.name ? ` - ${u.department.name}` : ''}
                                 </Option>
                             ))}
                         </Select>
@@ -150,7 +150,7 @@ const SignatureRequestModal: React.FC<SignatureRequestModalProps> = ({ visible, 
                                     if (signers.find(s => s.userId === u.id)) return null;
                                     return (
                                         <Option key={u.id} value={u.id}>
-                                            {u.name || u.username} - {u.department?.name || '---'}
+                                            {u.name || u.username} {u.department?.name ? ` - ${u.department.name}` : ''}
                                         </Option>
                                     );
                                 })}

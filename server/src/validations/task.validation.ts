@@ -34,6 +34,7 @@ const updateTask = {
         status: Joi.string().valid('TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'),
         assigneeId: Joi.number().allow(null),
         dueDate: Joi.date().allow(null),
+        files: Joi.any()
     })
 };
 

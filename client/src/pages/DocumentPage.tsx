@@ -312,7 +312,8 @@ const DocumentPage: React.FC = () => {
         try {
             const formData = new FormData();
             formData.append('file', signedPdfBlob, signatureDocTitle + '_signed.pdf');
-            formData.append('status', 'SIGNED');
+            formData.append('action', 'SIGNED');
+            // formData.append('status', 'SIGNED'); // User will update manually
 
             await updateDocument(signatureDocId, formData);
 
@@ -444,7 +445,7 @@ const DocumentPage: React.FC = () => {
 
         const canView = isOwner || isAdmin || userPermission || (record.visibility === 'PUBLIC') || hasDepartmentAccess;
         const isManagerOfDept = user.role === 'MANAGER' && record.departmentId === user.departmentId;
-        const canEdit = isOwner || isAdmin || isManagerOfDept || (userPermission?.permission === 'EDIT');
+        const canEdit = isOwner || isAdmin || isManagerOfDept || (userPermission?.permission === 'EDIT') || (canView && record.accessLevel === 'EDIT');
         const canSign = isOwner || isAdmin || (userPermission?.permission === 'SIGN');
         const canDelete = isOwner || isAdmin || isManagerOfDept;
 
@@ -601,7 +602,10 @@ const DocumentPage: React.FC = () => {
                                 const isAdmin = user.role === 'ADMIN';
                                 const isManagerOfDept = user.role === 'MANAGER' && doc.departmentId === user.departmentId;
                                 const userPermission = doc.permissions?.find((p: any) => Number(p.userId) === Number(user.id));
-                                const canEdit = isOwner || isAdmin || isManagerOfDept || userPermission?.permission === 'EDIT';
+                                const isSupervisory = user.department?.isSupervisory;
+                                const hasDepartmentAccess = doc.visibility === 'DEPARTMENT' && (doc.departmentId === user.departmentId || isSupervisory);
+                                const canView = isOwner || isAdmin || userPermission || (doc.visibility === 'PUBLIC') || hasDepartmentAccess;
+                                const canEdit = isOwner || isAdmin || isManagerOfDept || (userPermission?.permission === 'EDIT') || (canView && doc.accessLevel === 'EDIT');
                                 return (<Col xs={24} sm={12} md={8} lg={6} xl={4} key={doc.id}><DocumentCard document={doc} menuItems={getMenuItems(doc)} canDrag={canEdit} /></Col>);
                             })}
                         </Row>
@@ -632,7 +636,10 @@ const DocumentPage: React.FC = () => {
                                     const isAdmin = user.role === 'ADMIN';
                                     const isManagerOfDept = user.role === 'MANAGER' && record.departmentId === user.departmentId;
                                     const userPermission = record.permissions?.find((p: any) => Number(p.userId) === Number(user.id));
-                                    canDrag = isOwner || isAdmin || isManagerOfDept || userPermission?.permission === 'EDIT';
+                                    const isSupervisory = user.department?.isSupervisory;
+                                    const hasDepartmentAccess = record.visibility === 'DEPARTMENT' && (record.departmentId === user.departmentId || isSupervisory);
+                                    const canView = isOwner || isAdmin || userPermission || (record.visibility === 'PUBLIC') || hasDepartmentAccess;
+                                    canDrag = isOwner || isAdmin || isManagerOfDept || (userPermission?.permission === 'EDIT') || (canView && record.accessLevel === 'EDIT');
                                 }
                                 return {
                                     record,

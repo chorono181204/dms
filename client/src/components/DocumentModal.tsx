@@ -59,9 +59,7 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
             if (documentId) {
                 fetchDocument(documentId);
             }
-            if (user.role === 'ADMIN') {
-                fetchDepartments();
-            }
+            fetchDepartments(); // Always fetch for sharing
             if (defaultCategoryId && !documentId) {
                 form.setFieldsValue({ categoryId: defaultCategoryId, status: 'DRAFT' });
             } else if (!documentId) {
@@ -116,16 +114,15 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
         try {
             const data = await getDocument(id);
 
-            const sharedWith: number[] = [];
-            let accessLevel = 'VIEW';
+            const sharedUserIds = data.permissions
+                ? [...new Set(data.permissions.filter((p: any) => p.userId).map((p: any) => p.userId).filter(Boolean))]
+                : [];
+            const sharedDeptIds = data.permissions
+                ? [...new Set(data.permissions.filter((p: any) => p.departmentId).map((p: any) => p.departmentId).filter(Boolean))]
+                : [];
 
-            if (data.permissions && data.permissions.length > 0) {
-                data.permissions.forEach((p: any) => {
-                    sharedWith.push(p.userId);
-                    // If any permission is EDIT, we assume the shared level is EDIT
-                    if (p.permission === 'EDIT') accessLevel = 'EDIT';
-                });
-            }
+            // Assume the first permission's level represents the general level (simplification)
+            const generalAccessLevel = data.permissions?.[0]?.permission || data.accessLevel || 'VIEW';
 
             form.setFieldsValue({
                 title: data.title,
@@ -135,8 +132,9 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
                 departmentId: data.departmentId,
                 categoryId: data.categoryId,
                 visibility: data.visibility || 'PRIVATE',
-                sharedWith: sharedWith,
-                sharedAccessLevel: data.accessLevel || 'VIEW',
+                sharedWith: sharedUserIds,
+                sharedDepartments: sharedDeptIds,
+                sharedAccessLevel: generalAccessLevel,
                 effectiveDate: data.effectiveDate ? dayjs(data.effectiveDate) : null,
                 expirationDate: data.expirationDate ? dayjs(data.expirationDate) : null,
                 isReference: data.isReference || false,
@@ -153,14 +151,10 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
         }
     };
 
-    // Auto-reset sharedAccessLevel to VIEW if visibility is PRIVATE
-    // Auto-select 'department' if visibility is DEPARTMENT
+    // Simplified sharing logic: remove auto-selection overrides
     useEffect(() => {
         if (visibility === 'PRIVATE') {
-            form.setFieldsValue({ sharedAccessLevel: 'VIEW' });
-        }
-        if (visibility === 'DEPARTMENT') {
-            form.setFieldsValue({ sharedWith: ['department'] });
+            // form.setFieldsValue({ sharedAccessLevel: 'VIEW' });
         }
     }, [visibility, form]);
 
@@ -185,38 +179,14 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
             formData.append('accessLevel', values.sharedAccessLevel || 'VIEW');
 
             // Handle sharedWithViewers and sharedWithEditors (Simplification Map)
-            // Handle sharedWithViewers and sharedWithEditors (Simplification Map)
-            if (values.visibility === 'PRIVATE' || values.visibility === 'DEPARTMENT' || !values.visibility) {
-                let sharedWith = values.sharedWith || [];
-                const level = values.sharedAccessLevel || 'VIEW';
+            const sharedUsers = values.sharedWith || [];
+            const sharedDepartments = values.sharedDepartments || [];
+            const level = values.sharedAccessLevel || 'VIEW';
 
-                // Check for department sharing
-                let includeDepartment = false;
-                if (sharedWith.includes('department')) {
-                    includeDepartment = true;
-                    // Remove 'department' string from list
-                    sharedWith = sharedWith.filter((id: any) => id !== 'department');
-                }
-
-                // Map to backend fields based on permission level
-                if (level === 'EDIT') {
-                    formData.append('sharedWithEditors', JSON.stringify(sharedWith));
-                    formData.append('sharedWithViewers', JSON.stringify([]));
-                    if (includeDepartment) formData.append('includeDepartmentEditors', 'true');
-                } else if (level === 'DOWNLOAD') {
-                    formData.append('sharedWithDownloaders', JSON.stringify(sharedWith));
-                    formData.append('sharedWithViewers', JSON.stringify([]));
-                    formData.append('sharedWithEditors', JSON.stringify([]));
-                    if (includeDepartment) formData.append('includeDepartmentDownloaders', 'true');
-                } else {
-                    formData.append('sharedWithViewers', JSON.stringify(sharedWith));
-                    formData.append('sharedWithEditors', JSON.stringify([]));
-                    if (includeDepartment) formData.append('includeDepartmentViewers', 'true');
-                }
-            } else {
-                formData.append('sharedWithViewers', JSON.stringify([]));
-                formData.append('sharedWithEditors', JSON.stringify([]));
-            }
+            // Map to backend fields
+            formData.append('sharedUserIds', JSON.stringify(sharedUsers));
+            formData.append('sharedDepartmentIds', JSON.stringify(sharedDepartments));
+            formData.append('permission', level);
 
             // Should be automatic based on user, but can pass explicit if admin
             if (user.role === 'ADMIN') {
@@ -397,7 +367,7 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
                                 <Col span={8}>
                                     <Form.Item
                                         name="visibility"
-                                        label="Phạm vi chia sẻ"
+                                        label="Nhãn bảo mật (Watermark)"
                                         initialValue={canCreateConfidential ? 'PRIVATE' : 'DEPARTMENT'}
                                         style={{ marginBottom: 0 }}
                                     >
@@ -445,67 +415,69 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
                             </Row>
 
                             {(visibility === 'PRIVATE' || visibility === 'DEPARTMENT' || visibility === 'PUBLIC') && (
-                                <div style={{ background: '#f9f9f9', padding: 12, borderRadius: 6, marginTop: 12 }}>
+                                <div style={{ background: '#f9f9f9', padding: '12px 16px', borderRadius: 8, marginTop: 12, border: '1px solid #f0f0f0' }}>
+                                    <h4 style={{ marginBottom: 16, color: '#143C72' }}>Phạm vi chia sẻ & Truy cập</h4>
                                     <Row gutter={16}>
-                                        {visibility === 'PRIVATE' ? (
-                                            <Col span={16}>
-                                                <Form.Item
-                                                    name="sharedWith"
-                                                    label="Chia sẻ với (Người dùng)"
-                                                    style={{ marginBottom: 0 }}
+                                        <Col span={24} style={{ marginBottom: 12 }}>
+                                            <Form.Item
+                                                name="sharedDepartments"
+                                                label="Chia sẻ với (Khoa / Phòng ban)"
+                                                style={{ marginBottom: 0 }}
+                                            >
+                                                <Select
+                                                    mode="multiple"
+                                                    placeholder="Chọn các khoa được quyền xem..."
+                                                    style={{ width: '100%' }}
+                                                    optionFilterProp="children"
+                                                    allowClear
                                                 >
-                                                    <Select
-                                                        mode="multiple"
-                                                        placeholder="Chọn nhân viên..."
-                                                        style={{ width: '100%' }}
-                                                        optionFilterProp="label"
-                                                        maxTagCount={2}
-                                                        allowClear
-                                                        onChange={(selectedValues) => {
-                                                            if (selectedValues.includes('department')) {
-                                                                const departmentUserIds = users
-                                                                    .filter(u => u.departmentId === user.departmentId && u.id !== user.id)
-                                                                    .map(u => u.id);
-                                                                const allSelected = [...new Set([...selectedValues.filter(v => v !== 'department'), ...departmentUserIds])];
-                                                                form.setFieldsValue({ sharedWith: allSelected });
-                                                            }
-                                                        }}
-                                                    >
-                                                        {visibility !== 'PRIVATE' && (
-                                                            <Option key="department" value="department" label="Toàn khoa">Toàn khoa</Option>
-                                                        )}
-                                                        {users
-                                                            .filter(u => {
-                                                                if (visibility === 'PRIVATE' && u.department?.isSupervisory) {
-                                                                    return false;
-                                                                }
-                                                                return true;
-                                                            })
-                                                            .map(u => (
-                                                                <Option key={u.id} value={u.id} label={u.name || u.username}>{u.name || u.username}</Option>
-                                                            ))}
-                                                    </Select>
-                                                </Form.Item>
-                                            </Col>
-                                        ) : (
-                                            <Col span={16}>
-                                                <div style={{ lineHeight: '32px', paddingTop: 24, color: '#888', fontStyle: 'italic', fontSize: 13 }}>
-                                                    {visibility === 'DEPARTMENT' ? 'Chia sẻ cho toàn bộ thành viên trong khoa' : 'Chia sẻ công khai toàn bộ hệ thống'}
-                                                </div>
-                                            </Col>
-                                        )}
+                                                    <Option key="all" value="all" style={{ fontWeight: 'bold', color: '#1890ff' }}>-- TẤT CẢ KHOA (CÔNG KHAI) --</Option>
+                                                    {departments.map(dept => (
+                                                        <Option key={dept.id} value={dept.id}>{dept.name}</Option>
+                                                    ))}
+                                                </Select>
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={16}>
+                                            <Form.Item
+                                                name="sharedWith"
+                                                label="Chia sẻ với (Cá nhân)"
+                                                style={{ marginBottom: 0 }}
+                                            >
+                                                <Select
+                                                    mode="multiple"
+                                                    placeholder="Chọn nhân viên..."
+                                                    style={{ width: '100%' }}
+                                                    optionFilterProp="label"
+                                                    maxTagCount={2}
+                                                    allowClear
+                                                >
+                                                    {users
+                                                        .filter(u => u.role !== 'ADMIN')
+                                                        .map(u => (
+                                                            <Option
+                                                                key={u.id}
+                                                                value={u.id}
+                                                                label={u.name || u.username}
+                                                            >
+                                                                {u.name || u.username} {u.department?.name ? ` - ${u.department.name}` : ''}
+                                                            </Option>
+                                                        ))}
+                                                </Select>
+                                            </Form.Item>
+                                        </Col>
 
                                         <Col span={8}>
                                             <Form.Item
                                                 name="sharedAccessLevel"
-                                                label="Quyền hạn"
+                                                label="Quyền hạn chung"
                                                 initialValue="VIEW"
                                                 style={{ marginBottom: 0 }}
                                             >
                                                 <Select>
                                                     <Option value="VIEW">Chỉ xem</Option>
-                                                    <Option value="DOWNLOAD" disabled={visibility === 'PRIVATE'}>Được tải về</Option>
-                                                    <Option value="EDIT" disabled={visibility === 'PRIVATE'}>Được chỉnh sửa</Option>
+                                                    <Option value="DOWNLOAD">Được tải về</Option>
+                                                    <Option value="EDIT">Được chỉnh sửa</Option>
                                                 </Select>
                                             </Form.Item>
                                         </Col>
@@ -547,17 +519,20 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
                                 }}
                                 value={null} // Reset always
                             >
-                                {users.map(u => {
-                                    const displayName = u.name || u.username;
-                                    const displayText = u.position
-                                        ? `${displayName} (${u.position})`
-                                        : displayName;
-                                    // Filter out already selected
-                                    if (signers.find(s => s.userId === u.id)) return null;
-                                    return (
-                                        <Option key={u.id} value={u.id}>{displayText}</Option>
-                                    );
-                                })}
+                                {users
+                                    .filter(u => u.role !== 'ADMIN')
+                                    .map(u => {
+                                        const displayName = u.name || u.username;
+                                        const deptName = u.department?.name ? ` - ${u.department.name}` : '';
+                                        const displayText = u.position
+                                            ? `${displayName}${deptName} (${u.position})`
+                                            : `${displayName}${deptName}`;
+                                        // Filter out already selected
+                                        if (signers.find(s => s.userId === u.id)) return null;
+                                        return (
+                                            <Option key={u.id} value={u.id}>{displayText}</Option>
+                                        );
+                                    })}
                             </Select>
                         </div>
 

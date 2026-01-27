@@ -215,13 +215,11 @@ function MainLayout() {
     };
 
     socketService.onReceiveMessage(handleGlobalMessage)
-    socketService.on('new_notification', handleNewNotification)
     socketService.on('receive_notification', handleNewNotification)
     socketService.on('added_to_group', handleAddedToGroup)
 
     return () => {
       socketService.offReceiveMessage(handleGlobalMessage)
-      socketService.off('new_notification', handleNewNotification)
       socketService.off('receive_notification', handleNewNotification)
       socketService.off('added_to_group', handleAddedToGroup)
     }

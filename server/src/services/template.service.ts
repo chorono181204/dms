@@ -8,7 +8,7 @@ import ApiError from '../utils/ApiError';
  * @param {Object} templateBody
  * @returns {Promise<Template>}
  */
-const createTemplate = async (templateBody: Prisma.TemplateUncheckedCreateInput): Promise<Template> => {
+const createTemplate = async (templateBody: any): Promise<Template> => {
     return prisma.template.create({
         data: templateBody
     });
@@ -51,6 +51,9 @@ const queryTemplates = async (
                 },
                 category: {
                     select: { id: true, name: true }
+                },
+                permissions: {
+                    select: { userId: true, departmentId: true, permission: true }
                 }
             }
         }),
@@ -78,7 +81,10 @@ const getTemplateById = async (id: number): Promise<Template | null> => {
         where: { id },
         include: {
             department: { select: { id: true, name: true } },
-            category: { select: { id: true, name: true } }
+            category: { select: { id: true, name: true } },
+            permissions: {
+                select: { userId: true, departmentId: true, permission: true }
+            }
         }
     });
 };
@@ -91,7 +97,7 @@ const getTemplateById = async (id: number): Promise<Template | null> => {
  */
 const updateTemplateById = async (
     templateId: number,
-    updateBody: Prisma.TemplateUncheckedUpdateInput
+    updateBody: any
 ): Promise<Template> => {
     const template = await getTemplateById(templateId);
     if (!template) {

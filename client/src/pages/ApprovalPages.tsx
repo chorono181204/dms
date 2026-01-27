@@ -85,12 +85,8 @@ export default function ApprovalPages({ type }: ApprovalPageProps) {
       if (type === 'pending-sign') {
         res = await getPendingSignatures();
       } else if (type === 'history') {
-        // Fetch both signature history and approval history
-        const [signatureHistory, approvalHistory] = await Promise.all([
-          getSignatureHistory(),
-          getApprovalHistory()
-        ]);
-        res = [...signatureHistory, ...approvalHistory];
+        // Fetch consolidated approval/processing history (DocumentHistory)
+        res = await getApprovalHistory();
       } else if (type === 'pending-approve') {
         res = await getPendingApprovals();
       }
@@ -127,9 +123,9 @@ export default function ApprovalPages({ type }: ApprovalPageProps) {
           owner: doc.createdByName || doc.createdBy,
           requestedAt: isSignatureHistory
             ? new Date(item.requestedAt).toLocaleString()
-            : new Date(doc.updatedAt).toLocaleString(),
-          signedAt: item.signedAt ? new Date(item.signedAt).toLocaleString() : null,
-          status: item.status || item.action, // signature uses 'status', approval uses 'action'
+            : (item.actionedAt ? new Date(item.actionedAt).toLocaleString() : new Date(doc.updatedAt).toLocaleString()),
+          signedAt: item.signedAt || item.actionedAt ? new Date(item.signedAt || item.actionedAt).toLocaleString() : null,
+          status: item.action || item.status, // Prioritize action (from History) over document status
           note: item.note || item.actionDescription || '',
           patientId: doc.code || '---',
           content: doc.content
@@ -525,7 +521,8 @@ export default function ApprovalPages({ type }: ApprovalPageProps) {
           try {
             const formData = new FormData();
             formData.append('file', signedPdfBlob, signatureDocTitle + '_signed.pdf');
-            formData.append('status', 'SIGNED');
+            formData.append('action', 'SIGNED');
+            // formData.append('status', 'SIGNED'); // User will update manually
 
             const token = localStorage.getItem('accessToken');
             const url = `${getBackendUrl()}/v1/documents/` + signatureDocId;

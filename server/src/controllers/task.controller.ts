@@ -86,6 +86,21 @@ const createTask = catchAsync(async (req, res) => {
         );
     }
 
+    // Auto-log initial assignment
+    if (finalTask?.assigneeId) {
+        await prisma.taskComment.create({
+            data: {
+                taskId: finalTask.id,
+                userId: user.id,
+                content: `Đã giao công việc cho ${finalTask.assignee?.name || finalTask.assignee?.username}`,
+                type: 'SYSTEM'
+            }
+        });
+    }
+
+    // Real-time update for Task Board
+    io.emit('new_task', finalTask);
+
     res.status(httpStatus.CREATED).send(finalTask);
 });
 
@@ -191,6 +206,9 @@ const updateTaskStatus = catchAsync(async (req, res) => {
         );
     }
 
+    // Real-time update for Task Board
+    io.emit('task_updated', updatedTask);
+
     res.send(updatedTask);
 });
 
@@ -225,6 +243,32 @@ const updateTask = catchAsync(async (req, res) => {
             attachments: true // Include this but attachments update happens below
         }
     });
+
+    // Auto-log reassignment if assigneeId changed
+    if (updateBody.assigneeId && Number(updateBody.assigneeId) !== existingTask.assigneeId) {
+        const newAssigneeId = Number(updateBody.assigneeId);
+        const newAssignee = await prisma.user.findUnique({ where: { id: newAssigneeId } });
+
+        await prisma.taskComment.create({
+            data: {
+                taskId: task.id,
+                userId: user.id,
+                content: `Đã chuyển công việc qua cho ${newAssignee?.name || newAssignee?.username}`,
+                type: 'SYSTEM'
+            }
+        });
+
+        // Notify new assignee
+        if (newAssigneeId !== user.id) {
+            await notificationService.createNotification(
+                newAssigneeId,
+                'Công việc được chuyển giao',
+                `Bạn được nhận bàn giao công việc: ${task.title} từ ${user.name || user.username}`,
+                'TASK',
+                `/tasks?taskId=${task.id}`
+            );
+        }
+    }
 
     // Handle File Uploads if any (Same logic as createTask)
     if (req.files && Array.isArray(req.files)) {
@@ -262,6 +306,9 @@ const updateTask = catchAsync(async (req, res) => {
             attachments: true
         }
     });
+
+    // Real-time update for Task Board
+    io.emit('task_updated', finalTask);
 
     res.send(finalTask);
 });
@@ -349,6 +396,9 @@ const addTaskComment = catchAsync(async (req, res) => {
         }
     });
 
+    // Real-time update for Task Board
+    io.emit('task_updated', updatedTask);
+
     res.send(updatedTask);
 });
 
@@ -394,6 +444,9 @@ const deleteTask = catchAsync(async (req, res) => {
     await prisma.task.delete({
         where: { id: Number(taskId) }
     });
+
+    // Real-time update for Task Board
+    io.emit('task_deleted', Number(taskId));
 
     res.status(httpStatus.NO_CONTENT).send();
 });

@@ -161,6 +161,21 @@ export default function TemplateManagementPage() {
             render: (_, record) => record.department?.name || '---',
         },
         {
+            title: 'Quyền hạn',
+            key: 'visibility',
+            width: 130,
+            render: (_, record) => {
+                let label = ''; let color = '';
+                switch (record.visibility) {
+                    case 'PRIVATE': label = 'Bảo mật'; color = 'red'; break;
+                    case 'DEPARTMENT': label = 'Nội bộ'; color = 'orange'; break;
+                    case 'PUBLIC': label = 'Công khai'; color = 'green'; break;
+                    default: label = 'Chưa thiết lập'; color = 'default';
+                }
+                return <Tag color={color}>{label}</Tag>;
+            }
+        },
+        {
             title: 'Trạng thái',
             dataIndex: 'isActive',
             key: 'isActive',
@@ -190,7 +205,11 @@ export default function TemplateManagementPage() {
             width: 180,
             fixed: 'right',
             render: (_, record) => {
-                const canEdit = ['ADMIN', 'MANAGER'].includes(user.role) || record.createdBy === user.username;
+                const isOwner = record.createdBy === user.username;
+                const isAdmin = user.role === 'ADMIN';
+                const isManagerOfDept = user.role === 'MANAGER' && record.departmentId === user.departmentId;
+                const userPermission = record.permissions?.find((p: any) => Number(p.userId) === Number(user.id));
+                const canEdit = isOwner || isAdmin || isManagerOfDept || (userPermission?.permission === 'EDIT');
 
                 return (
                     <Space size="small">

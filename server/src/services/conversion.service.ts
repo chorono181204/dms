@@ -15,6 +15,11 @@ const SOFFICE_PATH = process.env.LIBREOFFICE_PATH || 'C:\\Program Files\\LibreOf
  * @returns Buffer containing PDF data
  */
 export const convertFileToPdf = async (inputPath: string): Promise<Buffer> => {
+    let tempInputPath = '';
+    let outputPdfPath = '';
+    const outputDir = path.join(process.cwd(), 'temp_pdf_conversions');
+    const userProfileDir = path.join(outputDir, `profile_${Date.now()}`);
+
     try {
         // Verify LibreOffice exists
         if (!fs.existsSync(SOFFICE_PATH)) {
@@ -27,52 +32,68 @@ export const convertFileToPdf = async (inputPath: string): Promise<Buffer> => {
         }
 
         // Create temporary output directory
-        const outputDir = path.join(process.cwd(), 'temp_pdf_conversions');
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
         }
 
-        // Build command: soffice.exe --headless --convert-to pdf --outdir <output> <input>
-        const command = `"${SOFFICE_PATH}" --headless --convert-to pdf --outdir "${outputDir}" "${inputPath}"`;
+        // 1. Copy input file to a safe local temporary path (to avoid path/character issues)
+        const safeId = `conv_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        const ext = path.extname(inputPath);
+        tempInputPath = path.join(outputDir, `${safeId}${ext}`);
+        fs.copyFileSync(inputPath, tempInputPath);
+
+        // 2. Build command: soffice.exe --headless --convert-to pdf --outdir <output> <input>
+        // Use -env:UserInstallation to avoid conflicts with other LibreOffice instances
+        const profilePath = `file:///${userProfileDir.replace(/\\/g, '/')}`;
+        const command = `"${SOFFICE_PATH}" "-env:UserInstallation=${profilePath}" --headless --convert-to pdf --outdir "${outputDir}" "${tempInputPath}"`;
 
         console.log('Executing LibreOffice conversion:', command);
 
         // Execute conversion
         const { stdout, stderr } = await execAsync(command, {
-            timeout: 60000, // Increased timeout for larger files
+            timeout: 60000,
             windowsHide: true,
         });
 
         if (stderr) {
             console.warn('LibreOffice stderr:', stderr);
         }
-
         console.log('LibreOffice stdout:', stdout);
 
-        // Find the output PDF file
-        const inputFileName = path.basename(inputPath, path.extname(inputPath));
-        const outputPdfPath = path.join(outputDir, `${inputFileName}.pdf`);
+        // 3. Find the output PDF file (it will have the same base name as tempInputPath)
+        outputPdfPath = path.join(outputDir, `${safeId}.pdf`);
 
-        // Wait a bit for file to be written
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Wait up to 5 seconds for file to appear, checking every 500ms
+        let attempts = 0;
+        while (!fs.existsSync(outputPdfPath) && attempts < 10) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            attempts++;
+        }
 
         if (!fs.existsSync(outputPdfPath)) {
-            throw new Error(`PDF output file not found: ${outputPdfPath}`);
+            throw new Error(`PDF output file not found after conversion at: ${outputPdfPath}. OutputDir contents: ${fs.readdirSync(outputDir).join(', ')}`);
         }
 
         // Read PDF buffer
         const pdfBuffer = fs.readFileSync(outputPdfPath);
-
-        // Cleanup: delete the temporary PDF file
-        try {
-            fs.unlinkSync(outputPdfPath);
-        } catch (err) {
-            console.warn('Failed to delete temp PDF:', err);
-        }
-
         return pdfBuffer;
+
     } catch (error: any) {
+        console.error('[CONVERSION_ERROR]', error);
         throw new Error(`File conversion failed: ${error.message}`);
+    } finally {
+        // Cleanup all temporary files and profile
+        [tempInputPath, outputPdfPath].forEach(p => {
+            if (p && fs.existsSync(p)) {
+                try { fs.unlinkSync(p); } catch (e) { }
+            }
+        });
+        if (fs.existsSync(userProfileDir)) {
+            try {
+                // Recursive delete for profile dir
+                fs.rmSync(userProfileDir, { recursive: true, force: true });
+            } catch (e) { }
+        }
     }
 };
 

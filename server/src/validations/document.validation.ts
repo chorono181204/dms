@@ -9,7 +9,7 @@ const createDocument = {
         categoryId: Joi.number().allow(null),
         status: Joi.string().valid('DRAFT', 'PENDING', 'APPROVED', 'SIGNED', 'REJECTED', 'ARCHIVED').default('DRAFT'),
         visibility: Joi.string().valid('PRIVATE', 'DEPARTMENT', 'PUBLIC').default('PRIVATE'),
-        accessLevel: Joi.string().valid('VIEW', 'EDIT').default('VIEW'),
+        accessLevel: Joi.string().valid('VIEW', 'EDIT', 'DOWNLOAD').default('VIEW'),
         effectiveDate: Joi.date().allow(null),
         expirationDate: Joi.date().allow(null),
     }).unknown(true),
@@ -54,11 +54,11 @@ const updateDocument = {
             departmentId: Joi.number(),
             categoryId: Joi.number().allow(null),
             visibility: Joi.string().valid('PRIVATE', 'DEPARTMENT', 'PUBLIC'),
-            accessLevel: Joi.string().valid('VIEW', 'EDIT'),
+            accessLevel: Joi.string().valid('VIEW', 'EDIT', 'DOWNLOAD'),
             effectiveDate: Joi.date().allow(null),
             expirationDate: Joi.date().allow(null),
+            action: Joi.string().allow('', null),
         })
-        .min(1)
         .unknown(true),
 };
 

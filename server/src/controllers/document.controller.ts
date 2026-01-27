@@ -12,9 +12,19 @@ import * as versionService from '../services/version.service';
 
 // Helper to fix UTF-8 encoding for fields coming from Multer/Busboy (defaults to latin1)
 const decodeUTF8 = (val: any) => {
-    if (typeof val !== 'string') return val;
+    if (typeof val !== 'string' || !val) return val;
+    // If string already contains characters > 255, it's already a proper Unicode string
+    for (let i = 0; i < val.length; i++) {
+        if (val.charCodeAt(i) > 255) return val;
+    }
     try {
-        return Buffer.from(val, 'latin1').toString('utf8');
+        // Only attempt to decode if it looks like it might be encoded UTF-8 bytes in latin1
+        // This is a common Multer/Busboy issue
+        const decoded = Buffer.from(val, 'latin1').toString('utf8');
+        // If the decoded string is actually different, use it. 
+        // We check if it's potentially broken (contains replacement chars) but usually the 
+        // byte-to-utf8 conversion is safe enough if the heuristic above passes.
+        return decoded;
     } catch (e) {
         return val;
     }
@@ -138,7 +148,7 @@ const createDocument = catchAsync(async (req, res) => {
 
     const cleanBody: any = {
         title: decodeUTF8(req.body.title),
-        code: req.body.code,
+        code: decodeUTF8(req.body.code),
         description: decodeUTF8(req.body.description),
         status: req.body.status || 'DRAFT',
         departmentId: req.body.departmentId ? parseInt(req.body.departmentId) : user.departmentId,
@@ -155,49 +165,26 @@ const createDocument = catchAsync(async (req, res) => {
         isReference: req.body.isReference === 'true'
     };
 
-    // Handle sharedWithViewers, sharedWithEditors, and sharedWithDownloaders
-    let sharedViewers: number[] = parseIds(req.body.sharedWithViewers);
-    let sharedEditors: number[] = parseIds(req.body.sharedWithEditors);
-    let sharedDownloaders: number[] = parseIds(req.body.sharedWithDownloaders);
+    // Simplified permission logic: Use sharedUserIds and sharedDepartmentIds from frontend
+    const sharedUsers = parseIds(req.body.sharedUserIds);
+    const sharedDepartments = parseIds(req.body.sharedDepartmentIds);
+    const permissionLevel = req.body.permission || 'VIEW';
 
-    sharedViewers = parseIds(req.body.sharedWithViewers);
-    sharedEditors = parseIds(req.body.sharedWithEditors);
-    sharedDownloaders = parseIds(req.body.sharedWithDownloaders);
-
-    // Old sharedWith backward compatibility (treat as viewers)
-    if (req.body.sharedWith && sharedViewers.length === 0 && sharedEditors.length === 0 && sharedDownloaders.length === 0) {
-        sharedViewers = parseIds(req.body.sharedWith);
-    }
-
-    // Handle Department Expansion (Backend Side)
-    // For CREATE, we use user.departmentId (Creator's Department)
-    if (req.body.includeDepartmentViewers === 'true' || req.body.includeDepartmentEditors === 'true' || req.body.includeDepartmentDownloaders === 'true') {
-        if (user.departmentId) {
-            const deptUsers = await prisma.user.findMany({
-                where: {
-                    departmentId: user.departmentId,
-                    id: { not: user.id } // Exclude current user
-                },
-                select: { id: true }
-            });
-            const deptUserIds = deptUsers.map(u => u.id);
-
-            if (req.body.includeDepartmentViewers === 'true') {
-                sharedViewers = [...new Set([...sharedViewers, ...deptUserIds])];
-            }
-            if (req.body.includeDepartmentEditors === 'true') {
-                sharedEditors = [...new Set([...sharedEditors, ...deptUserIds])];
-            }
-            if (req.body.includeDepartmentDownloaders === 'true') {
-                sharedDownloaders = [...new Set([...sharedDownloaders, ...deptUserIds])];
-            }
-        }
+    // Handle "All Departments" selection
+    const rawDepts = req.body.sharedDepartmentIds ? JSON.parse(req.body.sharedDepartmentIds) : [];
+    if (rawDepts.includes('all')) {
+        cleanBody.visibility = 'PUBLIC';
     }
 
     const permissionCreates: any[] = [];
-    sharedViewers.forEach(uid => permissionCreates.push({ userId: uid, permission: 'VIEW' }));
-    sharedEditors.forEach(uid => permissionCreates.push({ userId: uid, permission: 'EDIT' }));
-    sharedDownloaders.forEach(uid => permissionCreates.push({ userId: uid, permission: 'DOWNLOAD' }));
+    sharedUsers.forEach(uid => {
+        if (!isNaN(uid)) permissionCreates.push({ userId: uid, permission: permissionLevel });
+    });
+    sharedDepartments.forEach(did => {
+        if (!isNaN(did)) {
+            permissionCreates.push({ departmentId: did, permission: permissionLevel });
+        }
+    });
 
     if (permissionCreates.length > 0) {
         cleanBody.permissions = {
@@ -381,7 +368,9 @@ const getDocuments = catchAsync(async (req, res) => {
     // QLCL (Supervisory) has full view access like Admin
     if (user.role !== 'ADMIN' && !user.department?.isSupervisory) {
         const baseFilter = { ...filter };
-        // If a specific createdBy is requested, respect it but it must still be accessible
+        // Remove those we handle specially or that shouldn't be strict AND
+        delete baseFilter.departmentId;
+        delete baseFilter.visibility;
 
         filter = {
             AND: [
@@ -389,13 +378,51 @@ const getDocuments = catchAsync(async (req, res) => {
                 {
                     OR: [
                         { createdBy: user.username }, // Option 1: Only me (owned)
-                        { AND: [{ visibility: 'DEPARTMENT' }, { departmentId: user.departmentId }] }, // Option 2: Same department
-                        { visibility: 'PUBLIC' }, // Option 3: Whole system
-                        { permissions: { some: { userId: user.id } } } // Option 4: Explicitly shared with me
+                        { visibility: 'PUBLIC' }, // Option 2: Whole system
+                        { AND: [{ visibility: 'DEPARTMENT' }, { departmentId: user.departmentId || -1 }] }, // Option 3: Same department internal
+                        {
+                            permissions: {
+                                some: {
+                                    OR: [
+                                        { userId: user.id },
+                                        { departmentId: user.departmentId || -1 }
+                                    ]
+                                }
+                            }
+                        }
                     ]
                 }
             ]
         } as any;
+
+        // If a specific departmentId was requested, filter by it but allow shared documents too
+        if (req.query.departmentId) {
+            const requestedDeptId = parseInt(req.query.departmentId as string);
+            (filter.AND as any[]).push({
+                OR: [
+                    { departmentId: requestedDeptId },
+                    { permissions: { some: { departmentId: requestedDeptId } } }
+                ]
+            });
+        }
+    } else if (user.role === 'ADMIN' || user.department?.isSupervisory) {
+        // Admins can see everything, but if they filter by departmentId, show shared too
+        if (req.query.departmentId) {
+            const requestedDeptId = parseInt(req.query.departmentId as string);
+            const baseFilter = { ...filter };
+            delete baseFilter.departmentId;
+            filter = {
+                AND: [
+                    baseFilter,
+                    {
+                        OR: [
+                            { departmentId: requestedDeptId },
+                            { permissions: { some: { departmentId: requestedDeptId } } }
+                        ]
+                    }
+                ]
+            } as any;
+        }
     }
 
     const result = await documentService.queryDocuments(filter, options);
@@ -418,11 +445,14 @@ const getDocument = catchAsync(async (req, res) => {
     if (document.visibility === 'PUBLIC') return res.send(document);
     if (document.visibility === 'DEPARTMENT' && document.departmentId === user.departmentId) return res.send(document);
 
-    // Check explicit permissions
+    // Check explicit permissions (User or User's Department)
     const hasPermission = await prisma.documentPermission.findFirst({
         where: {
             documentId: document.id,
-            userId: user.id
+            OR: [
+                { userId: user.id },
+                { departmentId: user.departmentId || -1 }
+            ]
         }
     });
 
@@ -494,7 +524,7 @@ const updateDocument = catchAsync(async (req, res) => {
 
     const updateBody: any = {
         title: decodeUTF8(req.body.title),
-        code: req.body.code,
+        code: decodeUTF8(req.body.code),
         description: decodeUTF8(req.body.description),
         status: req.body.status,
         categoryId: req.body.categoryId ? Number(req.body.categoryId) : undefined,
@@ -518,8 +548,8 @@ const updateDocument = catchAsync(async (req, res) => {
     Object.keys(updateBody).forEach(key => updateBody[key] === undefined && delete updateBody[key]);
 
     // Handle sharedWith Update
-    // Handle sharedWith updates (Explicit Permissions)
-    if ('sharedWith' in req.body || 'sharedWithViewers' in req.body || 'sharedWithEditors' in req.body) {
+    // Handle sharedWith updates (Explicit Permissions) - Recognize new field names
+    if ('sharedWith' in req.body || 'sharedUserIds' in req.body || 'sharedDepartmentIds' in req.body) {
 
         const parseIds = (input: any): number[] => {
             if (!input) return [];
@@ -532,39 +562,13 @@ const updateDocument = catchAsync(async (req, res) => {
             }
         };
 
-        let viewers: number[] = [];
-        let editors: number[] = [];
-        let downloaders: number[] = [];
+        const sharedUsers = parseIds(req.body.sharedUserIds);
+        const sharedDepartments = parseIds(req.body.sharedDepartmentIds);
+        const permissionLevel = req.body.permission || 'VIEW';
 
-        if ('sharedWithViewers' in req.body) viewers = parseIds(req.body.sharedWithViewers);
-        if ('sharedWithEditors' in req.body) editors = parseIds(req.body.sharedWithEditors);
-        if ('sharedWithDownloaders' in req.body) downloaders = parseIds(req.body.sharedWithDownloaders);
-
-        // Backward compatibility: if sharedWith is present but others are empty, use sharedWith as viewers
-        if ('sharedWith' in req.body && viewers.length === 0 && editors.length === 0 && downloaders.length === 0) {
-            viewers = parseIds(req.body.sharedWith);
-        }
-
-        // Handle Department Expansion (Backend Side)
-        if (req.body.includeDepartmentViewers === 'true' || req.body.includeDepartmentEditors === 'true' || req.body.includeDepartmentDownloaders === 'true') {
-            const deptUsers = await prisma.user.findMany({
-                where: {
-                    departmentId: existing.departmentId,
-                    id: { not: user.id } // Exclude current user (editor/creator)
-                },
-                select: { id: true }
-            });
-            const deptUserIds = deptUsers.map(u => u.id);
-
-            if (req.body.includeDepartmentViewers === 'true') {
-                viewers = [...new Set([...viewers, ...deptUserIds])];
-            }
-            if (req.body.includeDepartmentEditors === 'true') {
-                editors = [...new Set([...editors, ...deptUserIds])];
-            }
-            if (req.body.includeDepartmentDownloaders === 'true') {
-                downloaders = [...new Set([...downloaders, ...deptUserIds])];
-            }
+        const rawDepts = req.body.sharedDepartmentIds ? JSON.parse(req.body.sharedDepartmentIds) : [];
+        if (rawDepts.includes('all')) {
+            updateBody.visibility = 'PUBLIC';
         }
 
         // Transaction to update permissions
@@ -572,13 +576,15 @@ const updateDocument = catchAsync(async (req, res) => {
             // Delete existing permissions
             await tx.documentPermission.deleteMany({ where: { documentId: existing.id } });
 
-            const permissionsToCreate: { userId: number, permission: 'VIEW' | 'EDIT' | 'DOWNLOAD' | 'SIGN' }[] = [];
+            const permissionsToCreate: any[] = [];
+            sharedUsers.forEach(uid => {
+                if (!isNaN(uid)) permissionsToCreate.push({ userId: uid, permission: permissionLevel });
+            });
+            sharedDepartments.forEach(did => {
+                if (!isNaN(did)) permissionsToCreate.push({ departmentId: did, permission: permissionLevel });
+            });
 
-            viewers.forEach(uid => permissionsToCreate.push({ userId: uid, permission: 'VIEW' }));
-            editors.forEach(uid => permissionsToCreate.push({ userId: uid, permission: 'EDIT' }));
-            downloaders.forEach(uid => permissionsToCreate.push({ userId: uid, permission: 'DOWNLOAD' }));
-
-            // Create new permissions one by one
+            // Create new permissions
             if (permissionsToCreate.length > 0) {
                 await Promise.all(
                     permissionsToCreate.map(p =>
@@ -586,6 +592,7 @@ const updateDocument = catchAsync(async (req, res) => {
                             data: {
                                 documentId: existing.id,
                                 userId: p.userId,
+                                departmentId: p.departmentId,
                                 permission: p.permission
                             }
                         })
@@ -606,7 +613,8 @@ const updateDocument = catchAsync(async (req, res) => {
     const tempReferencePaths: string[] = [];
     referenceFiles.forEach(f => tempReferencePaths.push(f.path));
 
-    // Handle Signature Flow Status Transition
+    /* 
+    // Handle Signature Flow Status Transition - DISABLED: User updates manually
     if (req.body.status === 'SIGNED') {
         const remainingRequests = await prisma.signatureRequest.count({
             where: {
@@ -624,6 +632,7 @@ const updateDocument = catchAsync(async (req, res) => {
             console.log(`[SIGN_FLOW] Document ${documentId} - Last signer detected. Moving to SIGNED.`);
         }
     }
+    */
 
     try {
         if (mainFile) {
@@ -728,17 +737,12 @@ const updateDocument = catchAsync(async (req, res) => {
 
 
             // Log history if status changed to SIGNED
+            // MOVED to central location below to avoid duplication
+            /*
             if (updateBody.status === 'SIGNED' && (!existing.status || existing.status !== 'SIGNED')) {
-                await prisma.documentHistory.create({
-                    data: {
-                        documentId,
-                        action: 'SIGNED',
-                        description: 'Đã ký tài liệu', // Fixed garbled text
-                        createdBy: user.username,
-                        departmentId: user.departmentId || existing.departmentId
-                    }
-                });
+                ...
             }
+            */
         } else if (existing?.content && existing.content.includes('G:\\')) {
             // --- SIMPLIFIED & DEBUGGING MOVE LOGIC ---
             const sanitize = (name: string) => name.replace(/[<>:"\\/\\|?*]/g, '_');
@@ -836,7 +840,9 @@ const updateDocument = catchAsync(async (req, res) => {
                 console.log('[MOVE_DEBUG] No relevant changes detected.');
             }
         }
-        // CRITICAL: Force update status to SIGNED
+        // Cập nhật trạng thái yêu cầu ký của cá nhân này thành Đã ký (SIGNED)
+        // Việc này để đánh dấu người dùng này đã ký xong, nhưng KHÔNG đổi trạng thái của cả Tài liệu.
+        let signaturesUpdatedCount = 0;
         try {
             const updateResult = await prisma.signatureRequest.updateMany({
                 where: {
@@ -849,13 +855,32 @@ const updateDocument = catchAsync(async (req, res) => {
                     signedAt: new Date()
                 }
             });
-            console.log(`Updated ${updateResult.count} signature requests to SIGNED for doc ${documentId} user ${user.id}`);
+            signaturesUpdatedCount = updateResult.count;
+            console.log(`Updated ${signaturesUpdatedCount} signature requests to SIGNED for doc ${documentId} user ${user.id}`);
         } catch (err) {
             console.error('Error updating signature request status:', err);
         }
 
+        // Log history if user just signed (via explicit action or by fulfilling a request)
+        // Log history if user just signed (via explicit action or by fulfilling a request)
+        // This is the CENTRAL place to log SIGNED action to avoid duplicates
+        if (req.body.action === 'SIGNED' || signaturesUpdatedCount > 0 || (updateBody.status === 'SIGNED' && existing.status !== 'SIGNED')) {
+            await prisma.documentHistory.create({
+                data: {
+                    documentId,
+                    action: 'SIGNED',
+                    description: 'Đã ký tài liệu',
+                    createdBy: user.username,
+                    createdByName: user.name || user.username,
+                    departmentId: user.departmentId || existing.departmentId
+                }
+            });
+            console.log(`[HISTORY] Logged SIGNED action for doc ${documentId} by ${user.username}`);
+        }
+
         // ALSO Log history here if not already logged (e.g. if we want to catch the SignatureRequest path too)
-        // But the above check on updateBody.status covers it because updateBody comes from req.body
+        // Note: The previous check on updateBody.status === 'SIGNED' is still there around line 743, 
+        // but now we also catch it here if it's an ad-hoc sign or request fulfill.
 
         // Process Reference File Deletions
         if (req.body.deletedAttachmentIds) {
@@ -934,6 +959,7 @@ const updateDocument = catchAsync(async (req, res) => {
             }
         }
 
+        console.log(`[DEBUG] Updating document ${documentId} with:`, JSON.stringify(updateBody, null, 2));
         const updatedDocument = await documentService.updateDocumentById(documentId, updateBody);
         res.send(updatedDocument);
     } catch (error) {
@@ -1356,11 +1382,11 @@ const rejectDocument = catchAsync(async (req, res) => {
 const getApprovalHistory = catchAsync(async (req, res) => {
     const user = req.user as any;
 
-    // Get all DocumentHistory records where current user approved or rejected
+    // Get all DocumentHistory records where current user approved or rejected or signed
     const historyRecords = await prisma.documentHistory.findMany({
         where: {
             createdBy: user.username,
-            action: { in: ['APPROVED', 'REJECTED'] }
+            action: { in: ['APPROVED', 'REJECTED', 'SIGNED'] }
         },
         include: {
             document: {
@@ -1378,7 +1404,7 @@ const getApprovalHistory = catchAsync(async (req, res) => {
         ...record.document,
         action: record.action,
         actionDescription: record.description,
-        actionedAt: record.id // Using id as timestamp proxy since DocumentHistory doesn't have createdAt
+        actionedAt: (record as any).createdAt || (record.document as any).updatedAt
     }));
 
     res.send(documents);

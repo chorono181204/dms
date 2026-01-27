@@ -45,21 +45,29 @@ const saveTemplateFile = (file: Express.Multer.File, category: string, name: str
 const createTemplate = catchAsync(async (req, res) => {
     const user = req.user as any;
 
-    // 1. Sanitize Body
+    // 1. Sanitize Body for Prisma Template model
     const cleanBody: any = {
         name: req.body.name,
-        categoryId: req.body.categoryId ? parseInt(req.body.categoryId as string) : undefined,
-        isActive: req.body.isActive === 'true' || req.body.isActive === true, // Convert 'true' string to boolean
-        departmentId: req.body.departmentId ? parseInt(req.body.departmentId as string) : user.departmentId,
+        isActive: req.body.isActive === 'true' || req.body.isActive === true,
         createdBy: user.username,
         updatedBy: user.username,
     };
 
+    if (req.body.categoryId) {
+        cleanBody.category = { connect: { id: parseInt(req.body.categoryId as string) } };
+    }
+
+    const deptId = req.body.departmentId ? parseInt(req.body.departmentId as string) : user.departmentId;
+    if (deptId) {
+        cleanBody.department = { connect: { id: deptId } };
+    }
+
     // 2. Handle Content / File
     if (req.file) {
         let categoryName = 'Chưa phân loại';
-        if (cleanBody.categoryId) {
-            const category = await prisma.category.findUnique({ where: { id: cleanBody.categoryId } });
+        const catId = req.body.categoryId ? parseInt(req.body.categoryId as string) : undefined;
+        if (catId) {
+            const category = await prisma.category.findUnique({ where: { id: catId } });
             if (category) categoryName = category.name;
         }
         cleanBody.content = saveTemplateFile(req.file, categoryName, cleanBody.name);
@@ -67,6 +75,46 @@ const createTemplate = catchAsync(async (req, res) => {
         cleanBody.content = req.body.content;
     } else {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Missing content or file');
+    }
+
+    const parseIds = (input: any): number[] => {
+        if (!input) return [];
+        try {
+            const parsed = JSON.parse(input);
+            return Array.isArray(parsed) ? parsed.map((id: any) => parseInt(id)) : [parseInt(parsed)];
+        } catch (e) {
+            if (Array.isArray(input)) return input.map((id: any) => parseInt(id));
+            const val = parseInt(input);
+            return isNaN(val) ? [] : [val];
+        }
+    };
+
+    const sharedUsers = parseIds(req.body.sharedUserIds);
+    const sharedDepartments = parseIds(req.body.sharedDepartmentIds);
+    const permissionLevel = req.body.permission || 'VIEW';
+
+    // Handle "All Departments" selection
+    if (sharedDepartments.includes(-99) || (req.body.sharedDepartmentIds && req.body.sharedDepartmentIds.includes('all'))) {
+        cleanBody.visibility = 'PUBLIC';
+    } else {
+        cleanBody.visibility = req.body.visibility || 'PRIVATE';
+    }
+    cleanBody.accessLevel = req.body.accessLevel || 'VIEW';
+
+    const permissionCreates: any[] = [];
+    sharedUsers.forEach(uid => {
+        if (!isNaN(uid)) permissionCreates.push({ userId: uid, permission: permissionLevel });
+    });
+    sharedDepartments.forEach(did => {
+        if (!isNaN(did) && did !== -99) {
+            permissionCreates.push({ departmentId: did, permission: permissionLevel });
+        }
+    });
+
+    if (permissionCreates.length > 0) {
+        cleanBody.permissions = {
+            create: permissionCreates
+        };
     }
 
     const template = await templateService.createTemplate(cleanBody);
@@ -78,8 +126,30 @@ const getTemplates = catchAsync(async (req, res) => {
     const options = pick(req.query, ['sortBy', 'limit', 'page']);
     const user = req.user as any;
 
-    if (user.role !== 'ADMIN') {
-        (filter as any).departmentId = user.departmentId;
+    if (user.role !== 'ADMIN' && !user.department?.isSupervisory) {
+        const baseFilter = { ...filter };
+        delete baseFilter.departmentId;
+
+        (filter as any).AND = [
+            baseFilter,
+            {
+                OR: [
+                    { createdBy: user.username },
+                    { visibility: 'PUBLIC' },
+                    { AND: [{ visibility: 'DEPARTMENT' }, { departmentId: user.departmentId || -1 }] },
+                    {
+                        permissions: {
+                            some: {
+                                OR: [
+                                    { userId: user.id },
+                                    { departmentId: user.departmentId || -1 }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }
+        ];
     }
 
     const result = await templateService.queryTemplates(filter, options);
@@ -93,8 +163,23 @@ const getTemplate = catchAsync(async (req, res) => {
     }
 
     const user = req.user as any;
-    if (user.role !== 'ADMIN' && template.departmentId !== user.departmentId) {
-        throw new ApiError(httpStatus.FORBIDDEN, 'Forbidden');
+    if (user.role === 'ADMIN' || user.department?.isSupervisory) return res.send(template);
+    if (template.createdBy === user.username) return res.send(template);
+    if (template.visibility === 'PUBLIC') return res.send(template);
+    if (template.visibility === 'DEPARTMENT' && template.departmentId === user.departmentId) return res.send(template);
+
+    const hasPermission = await prisma.templatePermission.findFirst({
+        where: {
+            templateId: template.id,
+            OR: [
+                { userId: user.id },
+                { departmentId: user.departmentId || -1 }
+            ]
+        }
+    });
+
+    if (!hasPermission) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Bạn không có quyền xem mẫu này');
     }
     res.send(template);
 });
@@ -102,26 +187,42 @@ const getTemplate = catchAsync(async (req, res) => {
 const updateTemplate = catchAsync(async (req, res) => {
     const user = req.user as any;
     const existing = await templateService.getTemplateById(req.params.templateId);
-    if (existing && user.role !== 'ADMIN' && existing.departmentId !== user.departmentId) {
-        throw new ApiError(httpStatus.FORBIDDEN, 'Forbidden');
+    if (!existing) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Mẫu không tồn tại');
     }
 
-    // Sanitize update body
+    const isAdmin = user.role === 'ADMIN';
+    const isOwner = existing.createdBy === user.username;
+    const isManagerOfDept = user.role === 'MANAGER' && existing.departmentId === user.departmentId;
+    const hasEditPermission = (existing as any).permissions?.some((p: any) => Number(p.userId) === Number(user.id) && p.permission === 'EDIT');
+
+    if (!isAdmin && !isOwner && !isManagerOfDept && !hasEditPermission) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Bạn không có quyền chỉnh sửa mẫu này');
+    }
+
+    // 1. Sanitize Update Body - Only include fields in the Template model
     const updateBody: any = {
-        ...req.body,
         updatedBy: user.username
     };
 
-    // Fix types if present
-    if (updateBody.isActive !== undefined) {
-        updateBody.isActive = updateBody.isActive === 'true' || updateBody.isActive === true;
-    }
-    if (updateBody.categoryId !== undefined) {
-        updateBody.categoryId = updateBody.categoryId ? parseInt(updateBody.categoryId as string) : null;
+    // Copy allowed basic fields
+    ['name', 'visibility', 'accessLevel'].forEach(field => {
+        if (req.body[field] !== undefined) updateBody[field] = req.body[field];
+    });
+
+    // Handle Boolean
+    if (req.body.isActive !== undefined) {
+        updateBody.isActive = req.body.isActive === 'true' || req.body.isActive === true;
     }
 
-    // Remove unrelated fields
-    delete updateBody.file;
+    // Handle Relations
+    if (req.body.categoryId !== undefined) {
+        if (req.body.categoryId) {
+            updateBody.category = { connect: { id: parseInt(req.body.categoryId as string) } };
+        } else {
+            updateBody.category = { disconnect: true };
+        }
+    }
 
     // Handle File Update or Rename/Move
     if (req.file) {
@@ -150,16 +251,15 @@ const updateTemplate = catchAsync(async (req, res) => {
         // Check if Name or Category changed
         const newName = updateBody.name || existing.name;
         let newCategoryName = 'Chưa phân loại';
-        if (updateBody.categoryId || existing.categoryId) {
-            const catId = updateBody.categoryId || existing.categoryId;
-            if (catId) {
-                const category = await prisma.category.findUnique({ where: { id: catId } });
-                if (category) newCategoryName = category.name;
-            }
+        const catIdInput = req.body.categoryId;
+        const catId = catIdInput ? parseInt(catIdInput as string) : existing.categoryId;
+        if (catId) {
+            const category = await prisma.category.findUnique({ where: { id: catId } });
+            if (category) newCategoryName = category.name;
         }
 
-        const nameChanged = updateBody.name && updateBody.name !== existing.name;
-        const categoryChanged = updateBody.categoryId && updateBody.categoryId !== existing.categoryId;
+        const nameChanged = req.body.name && req.body.name !== existing.name;
+        const categoryChanged = req.body.categoryId && parseInt(req.body.categoryId) !== existing.categoryId;
 
         if (nameChanged || categoryChanged) {
             try {
@@ -198,6 +298,59 @@ const updateTemplate = catchAsync(async (req, res) => {
         }
     }
 
+    // Handle permissions updates
+    if ('sharedUserIds' in req.body || 'sharedDepartmentIds' in req.body) {
+        const parseIds = (input: any): number[] => {
+            if (!input) return [];
+            try {
+                const parsed = JSON.parse(input);
+                return Array.isArray(parsed) ? parsed.map((id: any) => parseInt(id)) : [parseInt(parsed)];
+            } catch (e) {
+                if (Array.isArray(input)) return input.map((id: any) => parseInt(id));
+                return [parseInt(input)];
+            }
+        };
+
+        const sharedUsers = parseIds(req.body.sharedUserIds);
+        const sharedDepartments = parseIds(req.body.sharedDepartmentIds);
+        const permissionLevel = req.body.permission || 'VIEW';
+
+        if (sharedDepartments.includes(-99) || (req.body.sharedDepartmentIds && req.body.sharedDepartmentIds.includes('all'))) {
+            updateBody.visibility = 'PUBLIC';
+        } else if (req.body.visibility) {
+            updateBody.visibility = req.body.visibility;
+        }
+
+        await prisma.$transaction(async (tx) => {
+            await tx.templatePermission.deleteMany({ where: { templateId: existing.id } });
+
+            const permissionsToCreate: any[] = [];
+            sharedUsers.forEach(uid => {
+                if (!isNaN(uid)) permissionsToCreate.push({ userId: uid, permission: permissionLevel });
+            });
+            sharedDepartments.forEach(did => {
+                if (!isNaN(did) && did !== -99) {
+                    permissionsToCreate.push({ departmentId: did, permission: permissionLevel });
+                }
+            });
+
+            if (permissionsToCreate.length > 0) {
+                await Promise.all(
+                    permissionsToCreate.map(p =>
+                        tx.templatePermission.create({
+                            data: {
+                                templateId: existing.id,
+                                userId: p.userId,
+                                departmentId: p.departmentId,
+                                permission: p.permission
+                            }
+                        })
+                    )
+                );
+            }
+        });
+    }
+
     const template = await templateService.updateTemplateById(req.params.templateId, updateBody);
     res.send(template);
 });
@@ -205,8 +358,16 @@ const updateTemplate = catchAsync(async (req, res) => {
 const deleteTemplate = catchAsync(async (req, res) => {
     const user = req.user as any;
     const existing = await templateService.getTemplateById(req.params.templateId);
-    if (existing && user.role !== 'ADMIN' && existing.departmentId !== user.departmentId) {
-        throw new ApiError(httpStatus.FORBIDDEN, 'Forbidden');
+    if (!existing) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Mẫu không tồn tại');
+    }
+
+    const isAdmin = user.role === 'ADMIN';
+    const isOwner = existing.createdBy === user.username;
+    const isManagerOfDept = user.role === 'MANAGER' && existing.departmentId === user.departmentId;
+
+    if (!isAdmin && !isOwner && !isManagerOfDept) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Bạn không có quyền xóa mẫu này');
     }
     // Delete physical file if exists
     if (existing?.content && existing.content.includes('G:\\') && fs.existsSync(existing.content)) {

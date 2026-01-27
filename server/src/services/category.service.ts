@@ -183,10 +183,19 @@ const queryCategories = async (filter: any, options: any, user: any) => {
             {
                 AND: [
                     { visibility: 'DEPARTMENT' },
-                    { departmentId: user.departmentId }
+                    { departmentId: user.departmentId || -1 }
                 ]
             },
-            { permissions: { some: { userId: user.id } } }
+            {
+                permissions: {
+                    some: {
+                        OR: [
+                            { userId: user.id },
+                            { departmentId: user.departmentId || -1 }
+                        ]
+                    }
+                }
+            }
         ];
     }
 
@@ -411,8 +420,17 @@ const getVisibleCategoryIds = async (user: any, createdByFilter?: string): Promi
                 { createdBy: createdByFilter || user.username },
                 ...(createdByFilter ? [] : [
                     { visibility: 'PUBLIC' },
-                    { AND: [{ visibility: 'DEPARTMENT' }, { departmentId: user.departmentId }] },
-                    { permissions: { some: { userId: user.id } } }
+                    { AND: [{ visibility: 'DEPARTMENT' }, { departmentId: user.departmentId || -1 }] },
+                    {
+                        permissions: {
+                            some: {
+                                OR: [
+                                    { userId: user.id },
+                                    { departmentId: user.departmentId || -1 }
+                                ]
+                            }
+                        }
+                    }
                 ])
             ],
             deletedAt: null
@@ -499,7 +517,16 @@ const getCategoryContents = async (categoryId: number | string, user: any, optio
         const orConditions: any[] = [
             { createdBy: user.username },
             { visibility: 'PUBLIC' },
-            { permissions: { some: { userId: user.id } } }
+            {
+                permissions: {
+                    some: {
+                        OR: [
+                            { userId: user.id },
+                            { departmentId: user.departmentId || -1 }
+                        ]
+                    }
+                }
+            }
         ];
 
         if (isSupervisory) {
