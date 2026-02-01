@@ -84,12 +84,16 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick }) => {
                         )}
                     </div>
 
-                    {task.assignee ? (
-                        <Tooltip title={`Giao cho: ${task.assignee.name || task.assignee.username}`}>
-                            <Avatar size={24} src={task.assignee.avatar} style={{ background: '#1890ff', fontSize: 12 }}>
-                                {(task.assignee.name?.[0] || task.assignee.username?.[0]).toUpperCase()}
-                            </Avatar>
-                        </Tooltip>
+                    {task.assignees && task.assignees.length > 0 ? (
+                        <Avatar.Group maxCount={3} maxStyle={{ backgroundColor: '#f56a00', fontSize: 12 }} size={24}>
+                            {task.assignees.map((assignee: any) => (
+                                <Tooltip key={assignee.id} title={`Giao cho: ${assignee.name || assignee.username}`}>
+                                    <Avatar src={assignee.avatar} style={{ background: '#1890ff', fontSize: 12 }}>
+                                        {(assignee.name?.[0] || assignee.username?.[0]).toUpperCase()}
+                                    </Avatar>
+                                </Tooltip>
+                            ))}
+                        </Avatar.Group>
                     ) : (
                         <Tooltip title="Chưa giao">
                             <Avatar size={24} icon={<ClockCircleOutlined />} style={{ background: '#f0f0f0', color: '#bfbfbf' }} />

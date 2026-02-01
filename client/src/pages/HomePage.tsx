@@ -37,11 +37,7 @@ const columns = [
     dataIndex: 'title',
     key: 'title',
   },
-  {
-    title: 'Loại',
-    dataIndex: 'category',
-    key: 'category',
-  },
+
   {
     title: 'Trạng thái',
     dataIndex: 'status',

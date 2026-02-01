@@ -5,6 +5,7 @@ import config from './config/config';
 import logger from './config/logger';
 
 import { initCleanupTask } from './tasks/cleanup.task';
+import { initBackupTask } from './tasks/backup.task';
 
 import { createServer } from 'http';
 import { Server as SocketServer, Socket } from 'socket.io';
@@ -54,6 +55,7 @@ io.on('connection', async (socket: Socket) => {
 prisma.$connect().then(() => {
   logger.info('Connected to SQL Database');
   initCleanupTask();
+  initBackupTask();
   server = httpServer.listen(config.port, () => {
     logger.info(`Listening to port ${config.port}`);
   });

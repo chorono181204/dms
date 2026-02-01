@@ -8,16 +8,22 @@ export interface Task {
     priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
     assigneeId: number | null;
     assignerId: number;
+    approverId: number | null;
     departmentId: number | null;
     dueDate: string | null;
     createdAt: string;
     assignee?: { id: number; name: string; username: string; avatar?: string };
+    assignees?: { id: number; name: string; username: string; avatar?: string }[];
     assigner?: { id: number; name: string; username: string };
+    approver?: { id: number; name: string; username: string };
     attachments?: any[];
 }
 
-export const getTasks = async (filter?: string) => {
-    const response = await axiosClient.get('/tasks', { params: { filter } });
+export const getTasks = async (filter?: string, startDate?: string, endDate?: string) => {
+    const params: any = { filter };
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    const response = await axiosClient.get('/tasks', { params });
     return response.data;
 };
 
@@ -34,6 +40,10 @@ export const createTask = async (data: any) => {
                         // It's likely a raw file
                         formData.append('files', file);
                     }
+                });
+            } else if (Array.isArray(data[key])) {
+                data[key].forEach((val: any) => {
+                    formData.append(key, val);
                 });
             } else if (data[key] !== null && data[key] !== undefined) {
                 formData.append(key, data[key]);
@@ -70,6 +80,10 @@ export const updateTask = async (taskId: number, data: any) => {
                     // Existing files (already on server) are usually ignored here 
                     // or user logic might need them? For now, we only upload new ones.
                     // If backend needs list of kept files, we might need another field.
+                });
+            } else if (Array.isArray(data[key])) {
+                data[key].forEach((val: any) => {
+                    formData.append(key, val);
                 });
             } else if (data[key] !== null && data[key] !== undefined) {
                 formData.append(key, data[key]);

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Modal, Form, Input, Select, Switch, message, Button, Upload, Card, Row, Col } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
-import templateService, { Template } from '../services/template.service';
+import templateService from '../services/template.service';
 import { getBackendUrl } from '../utils/config';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -10,20 +10,23 @@ interface TemplateModalProps {
     onCancel: () => void;
     onSuccess: () => void;
     templateId?: number | null; // If present, we are editing
+    defaultCategoryId?: number | null; // New prop
+    initialValues?: { isGlobal?: boolean; departmentId?: number | null }; // Context prop
 }
 
 export default function TemplateModal({
     visible,
     onCancel,
     onSuccess,
-    templateId
+    templateId,
+    defaultCategoryId,
+    initialValues // Destructure
 }: TemplateModalProps) {
     const { user } = useAuth();
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const [editorContent, setEditorContent] = useState('');
     const [fileList, setFileList] = useState<any[]>([]);
-    const [categories, setCategories] = useState<any[]>([]);
     const [departments, setDepartments] = useState<any[]>([]);
     const [users, setUsers] = useState<any[]>([]);
     const [visibility, setVisibility] = useState('PRIVATE');
@@ -32,7 +35,7 @@ export default function TemplateModal({
         try {
             const { getUsers } = await import('../api/services/user.service');
             const result = await getUsers({ limit: 1000, scope: 'all' });
-            setUsers(result.results.filter((u: any) => u.id !== user.id) || []);
+            setUsers(result.results.filter((u: any) => u.id !== user?.id) || []);
         } catch (error) {
             console.error('Failed to fetch users');
         }
@@ -48,24 +51,11 @@ export default function TemplateModal({
         }
     };
 
-    const fetchCategories = async (deptId?: number) => {
-        try {
-            const { getCategories } = await import('../api/services/category.service');
-            const result = await getCategories({
-                isActive: true,
-                limit: 100,
-                departmentId: deptId
-            });
-            setCategories(result.results || []);
-        } catch (error) {
-            console.error('Failed to fetch categories');
-        }
-    };
+
 
     useEffect(() => {
         if (visible) {
             setFileList([]); // Reset files
-            fetchCategories(user.departmentId);
             fetchDepartments();
             fetchUsers();
 
@@ -100,12 +90,30 @@ export default function TemplateModal({
                     .finally(() => setLoading(false));
             } else {
                 form.resetFields();
-                form.setFieldsValue({ isActive: true, visibility: 'PRIVATE', sharedAccessLevel: 'VIEW' });
+
+                // Determine default visibility based on context
+                let defaultVisibility = 'PRIVATE';
+                if (initialValues) {
+                    if (initialValues.isGlobal) {
+                        defaultVisibility = 'PUBLIC';
+                    } else if (initialValues.departmentId === user?.departmentId) {
+                        // If in department folder, default to Department? Or Private?
+                        // Usually department folder -> Department visibility
+                        defaultVisibility = 'DEPARTMENT';
+                    }
+                }
+
+                form.setFieldsValue({
+                    isActive: true,
+                    visibility: defaultVisibility,
+                    sharedAccessLevel: 'VIEW',
+                    categoryId: defaultCategoryId // Pre-select category
+                });
                 setEditorContent('');
-                setVisibility('PRIVATE');
+                setVisibility(defaultVisibility);
             }
         }
-    }, [visible, templateId, form]);
+    }, [visible, templateId, form, initialValues, user]);
 
     const handleSubmit = async () => {
         try {
@@ -117,11 +125,28 @@ export default function TemplateModal({
             formData.append('isActive', String(values.isActive));
 
             // New Sharing Fields
-            formData.append('visibility', values.visibility || 'PRIVATE');
+            const formVisibility = values.visibility || 'PRIVATE';
+            formData.append('visibility', formVisibility);
             formData.append('accessLevel', values.sharedAccessLevel || 'VIEW');
             formData.append('sharedUserIds', JSON.stringify(values.sharedWith || []));
             formData.append('sharedDepartmentIds', JSON.stringify(values.sharedDepartments || []));
             formData.append('permission', values.sharedAccessLevel || 'VIEW');
+
+            // If inherited department context exists, we might want to ensure the template is linked to it?
+            // But Template creation currently relies on user.departmentId or explicit departmentId.
+            // If initialValues.departmentId exists and is different from user.departmentId, maybe we should pass it?
+            // Currently backend `createTemplate` logic:
+            // const deptId = req.body.departmentId ? ... : user.departmentId;
+            // So if we don't send it, it uses user's dept.
+            // If I am Admin creating a template in "Dept B" folder, it should belong to "Dept B".
+            if (initialValues?.departmentId) {
+                formData.append('departmentId', String(initialValues.departmentId));
+            }
+            // If public (isGlobal) usually dept is null? Or keeps creator dept?
+            // "Public" folder has null department?
+            // If I create template in Public Folder, maybe I want it to be Dept-neutral? 
+            // Or "My Dept contributed this Public Template".
+            // Let's stick to: If folder has explicit department, use it. If folder is Global (dept=null), use User's dept.
 
             if (fileList.length > 0) {
                 formData.append('file', fileList[0]);
@@ -162,7 +187,7 @@ export default function TemplateModal({
         >
             <Form form={form} layout="vertical">
                 <Row gutter={16}>
-                    <Col span={12}>
+                    <Col span={20}>
                         <Form.Item
                             name="name"
                             label="Tên mẫu"
@@ -170,20 +195,9 @@ export default function TemplateModal({
                         >
                             <Input placeholder="Nhập tên mẫu" />
                         </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                        <Form.Item
-                            name="categoryId"
-                            label="Loại văn bản"
-                            rules={[{ required: true, message: 'Vui lòng chọn loại' }]}
-                        >
-                            <Select placeholder="Chọn loại">
-                                {categories.map((cat) => (
-                                    <Select.Option key={cat.id} value={cat.id}>
-                                        {cat.name}
-                                    </Select.Option>
-                                ))}
-                            </Select>
+                        {/* Hidden categoryId field to maintain context */}
+                        <Form.Item name="categoryId" hidden>
+                            <Input />
                         </Form.Item>
                     </Col>
                     <Col span={4}>

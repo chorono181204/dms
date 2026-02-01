@@ -438,9 +438,37 @@ const getVisibleCategoryIds = async (user: any, createdByFilter?: string): Promi
         select: { categoryId: true }
     });
 
+    // 3. Categories with accessible TEMPLATES (Validation for Template Mode)
+    // We must also check templates to ensure folders containing ONLY shared templates are visible
+    const accessibleTemplates = await prisma.template.findMany({
+        where: user.role === 'ADMIN' ? (createdByFilter ? { createdBy: createdByFilter } : {}) : {
+            OR: [
+                { createdBy: createdByFilter || user.username },
+                ...(createdByFilter ? [] : [
+                    { visibility: 'PUBLIC' },
+                    { AND: [{ visibility: 'DEPARTMENT' }, { departmentId: user.departmentId || -1 }] },
+                    {
+                        permissions: {
+                            some: {
+                                OR: [
+                                    { userId: user.id },
+                                    { departmentId: user.departmentId || -1 }
+                                ]
+                            }
+                        }
+                    }
+                ])
+            ],
+            // Templates don't have deletedAt, check isActive
+            isActive: true
+        },
+        select: { categoryId: true }
+    });
+
     const leafIds = new Set<number>();
     directCategories.forEach(c => leafIds.add(c.id));
     accessibleDocs.forEach(d => { if (d.categoryId) leafIds.add(d.categoryId); });
+    accessibleTemplates.forEach(t => { if (t.categoryId) leafIds.add(t.categoryId); });
 
     const visibleIds = new Set<number>(leafIds);
     let currentIds = Array.from(leafIds);
@@ -469,13 +497,14 @@ const getVisibleCategoryIds = async (user: any, createdByFilter?: string): Promi
  * @param {string} [createdBy] - Filter by creator username
  * @returns {Promise<any>} - Object with folders and documents
  */
-const getCategoryContents = async (categoryId: number | string, user: any, options: any, search?: string, isReference?: string, createdBy?: string, departmentId?: number): Promise<any> => {
+const getCategoryContents = async (categoryId: number | string, user: any, options: any, search?: string, isReference?: string, createdBy?: string, departmentId?: number, type: string = 'document'): Promise<any> => {
     // Handle 'root' or string 'null' as null
     const id = (categoryId === 'root' || categoryId === 'null') ? null : (typeof categoryId === 'string' ? parseInt(categoryId) : categoryId);
 
     const page = options.page ? parseInt(options.page, 10) : 1;
     const limit = options.limit ? parseInt(options.limit, 10) : 50;
     const skip = (page - 1) * limit;
+    const isTemplateMode = type === 'template';
 
     // --- Prepare filters ---
 
@@ -493,24 +522,30 @@ const getCategoryContents = async (categoryId: number | string, user: any, optio
         folderWhere.departmentId = departmentId;
     }
 
-    // 2. Documents Filter: Base visibility rules
-    const baseDocumentWhere: any = {
-        deletedAt: null
+    // 2. Items (Document/Template) Filter
+    const baseWhere: any = {
+        // Templates don't typically have deletedAt unless we added it? Schema check: No deletedAt in Template.
+        // So for templates, maybe just use existing ones or isActive?
+        // Documents have deletedAt.
     };
 
-    // Filter by isReference if provided
-    if (isReference !== undefined) {
-        baseDocumentWhere.isReference = isReference === 'true';
+    if (!isTemplateMode) {
+        baseWhere.deletedAt = null;
     }
 
-    // Filter by Department if provided
+    // Filter by isReference logic only for docs usually?
+    if (!isTemplateMode && isReference !== undefined) {
+        baseWhere.isReference = isReference === 'true';
+    }
+
+    // Filter by Department
     if (departmentId) {
-        baseDocumentWhere.departmentId = departmentId;
+        baseWhere.departmentId = departmentId;
     }
 
-    // Permission filter for documents
+    // Permission / Visibility Filter
     if (createdBy) {
-        baseDocumentWhere.createdBy = createdBy;
+        baseWhere.createdBy = createdBy;
     } else if (user.role !== 'ADMIN') {
         const isSupervisory = user.department?.isSupervisory;
 
@@ -519,7 +554,7 @@ const getCategoryContents = async (categoryId: number | string, user: any, optio
             { visibility: 'PUBLIC' },
             {
                 permissions: {
-                    some: {
+                    some: { // Both Template and Document have permissions relation? Yes usually.
                         OR: [
                             { userId: user.id },
                             { departmentId: user.departmentId || -1 }
@@ -529,11 +564,10 @@ const getCategoryContents = async (categoryId: number | string, user: any, optio
             }
         ];
 
+        // Specific logic for Department visibility
         if (isSupervisory) {
-            // Supervisory departments can see ALL internal documents from ANY department
             orConditions.push({ visibility: 'DEPARTMENT' });
         } else {
-            // Normal users can only see internal documents from THEIR department
             orConditions.push({
                 AND: [
                     { visibility: 'DEPARTMENT' },
@@ -542,85 +576,97 @@ const getCategoryContents = async (categoryId: number | string, user: any, optio
             });
         }
 
-        baseDocumentWhere.OR = orConditions;
+        baseWhere.OR = orConditions;
     }
 
-    const documentWhere: any = { ...baseDocumentWhere };
+    const itemWhere: any = { ...baseWhere };
 
     // --- Search Logic ---
     if (search && search.trim() !== '') {
         if (id === null) {
             // Global Search
             folderWhere.name = { contains: search };
-            documentWhere.title = { contains: search };
+            itemWhere[isTemplateMode ? 'name' : 'title'] = { contains: search };
         } else {
-            // Scoped Search (Inside current folder)
+            // Scoped Search
             folderWhere.parentId = id;
             folderWhere.name = { contains: search };
 
-            documentWhere.categoryId = id;
-            documentWhere.title = { contains: search };
+            itemWhere.categoryId = id;
+            itemWhere[isTemplateMode ? 'name' : 'title'] = { contains: search };
         }
     } else {
         // Normal Navigation
         folderWhere.parentId = id;
-        documentWhere.categoryId = id;
+        itemWhere.categoryId = id;
     }
 
     // --- Execute Queries ---
 
-    const [subFolders, documents, totalDocs] = await Promise.all([
+    // Count selection for folders depends on type
+    const folderCountSelect = isTemplateMode ? {
+        templates: { where: baseWhere },
+        children: true
+    } : {
+        documents: { where: baseWhere },
+        children: true
+    };
+
+    const [subFolders, items, totalItems] = await Promise.all([
         // Get Folders
         prisma.category.findMany({
             where: folderWhere,
             include: {
                 department: { select: { id: true, name: true } },
-                _count: {
-                    select: {
-                        documents: {
-                            where: baseDocumentWhere
-                        },
-                        children: true
-                    }
-                }
+                _count: { select: folderCountSelect }
             },
             orderBy: [
                 { order: 'asc' },
                 { name: 'asc' }
             ]
         }),
-        // Get Documents
-        prisma.document.findMany({
-            where: documentWhere,
-            skip,
-            take: limit,
-            orderBy: { updatedAt: 'desc' },
-            select: {
-                id: true,
-                code: true,
-                title: true,
-                status: true,
-                visibility: true,
-                accessLevel: true,
-                departmentId: true,
-                permissions: {
-                    select: { userId: true, permission: true }
-                },
-                createdBy: true,
-                createdByName: true,
-                updatedAt: true,
-                updatedBy: true,
-                updatedByName: true,
-                effectiveDate: true,
-                expirationDate: true,
-                isReference: true,
-                content: true,
-                category: { select: { id: true, name: true } }, // Include category name for context in search results
-                department: { select: { id: true, name: true } }
-            }
-        }),
-        // Count Documents
-        prisma.document.count({ where: documentWhere })
+        // Get Items (Docs or Templates)
+        isTemplateMode ?
+            prisma.template.findMany({
+                where: itemWhere,
+                skip,
+                take: limit,
+                orderBy: { id: 'desc' },
+                include: {
+                    category: { select: { id: true, name: true } },
+                    department: { select: { id: true, name: true } },
+                    permissions: { select: { userId: true, permission: true } }
+                }
+            }) :
+            prisma.document.findMany({
+                where: itemWhere,
+                skip,
+                take: limit,
+                orderBy: { updatedAt: 'desc' },
+                select: {
+                    id: true,
+                    code: true,
+                    title: true,
+                    status: true,
+                    visibility: true,
+                    accessLevel: true,
+                    departmentId: true,
+                    permissions: { select: { userId: true, permission: true } },
+                    createdBy: true,
+                    createdByName: true,
+                    updatedAt: true,
+                    updatedBy: true,
+                    updatedByName: true,
+                    effectiveDate: true,
+                    expirationDate: true,
+                    isReference: true,
+                    content: true,
+                    category: { select: { id: true, name: true } },
+                    department: { select: { id: true, name: true } }
+                }
+            }),
+        // Count Items
+        isTemplateMode ? prisma.template.count({ where: itemWhere }) : prisma.document.count({ where: itemWhere })
     ]);
 
     const foldersWithMetadata = subFolders.map(folder => {
@@ -637,12 +683,12 @@ const getCategoryContents = async (categoryId: number | string, user: any, optio
 
     return {
         folders: foldersWithMetadata,
-        documents: {
-            results: documents,
+        documents: { // Frontend expects 'documents' key even if templates, or we can rename it but frontend page needs to handle it
+            results: items,
             page,
             limit,
-            totalPages: Math.ceil(totalDocs / limit),
-            totalResults: totalDocs
+            totalPages: Math.ceil(totalItems / limit),
+            totalResults: totalItems
         }
     };
 };

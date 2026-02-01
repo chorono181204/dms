@@ -5,7 +5,7 @@ export enum Role {
 }
 
 const allRoles = {
-  [Role.USER]: ['getUsers', 'getTemplates', 'getDocuments', 'manageDocuments'],
+  [Role.USER]: ['getUsers', 'getTemplates', 'manageTemplates', 'getDocuments', 'manageDocuments'],
   [Role.MANAGER]: ['getUsers', 'manageUsers', 'manageTemplates', 'getTemplates', 'getDocuments', 'manageDocuments'],
   [Role.ADMIN]: ['getUsers', 'manageUsers', 'manageTemplates', 'getTemplates', 'getDocuments', 'manageDocuments']
 };

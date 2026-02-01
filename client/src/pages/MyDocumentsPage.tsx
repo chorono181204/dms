@@ -414,7 +414,7 @@ const MyDocumentsPage: React.FC = () => {
       message.loading({ content: 'Đang tải tài liệu...', key: 'sign-loading' });
 
       const filePath = encodeURIComponent(record.content);
-      const downloadUrl = `${getBackendUrl()}/v1/upload/download?path=${filePath}&inline=true&token=${token}`;
+      const downloadUrl = `${getBackendUrl()}/v1/upload/download?path=${filePath}&inline=true&raw=true&token=${token}`;
 
       const response = await fetch(downloadUrl, {
         headers: { 'Authorization': `Bearer ${token}` }

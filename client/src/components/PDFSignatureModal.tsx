@@ -92,6 +92,7 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
     const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
     const [isPlacingMode, setIsPlacingMode] = useState(false);
     const [signatures, setSignatures] = useState<SignatureInstance[]>([]);
+    const [hoveredSigId, setHoveredSigId] = useState<string | null>(null);
 
     // Determine aspect ratio from image
     useEffect(() => {
@@ -413,28 +414,30 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                         >
                                             <div
                                                 onClick={(e) => e.stopPropagation()}
+                                                onMouseEnter={() => setHoveredSigId(sig.id)}
+                                                onMouseLeave={() => setHoveredSigId(null)}
                                                 style={{
                                                     position: 'absolute',
                                                     top: 0,
                                                     left: 0,
                                                     width: sig.width * sig.placedZoom,
                                                     cursor: 'move',
-                                                    border: '2px solid #52c41a',
+                                                    border: (hoveredSigId === sig.id || resizingId === sig.id) ? '2px solid #52c41a' : '2px solid transparent',
                                                     borderRadius: 4,
-                                                    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                                                    backgroundColor: (hoveredSigId === sig.id || resizingId === sig.id) ? 'rgba(255, 255, 255, 0.6)' : 'transparent',
+                                                    boxShadow: (hoveredSigId === sig.id || resizingId === sig.id) ? '0 2px 8px rgba(0,0,0,0.2)' : 'none',
                                                     zIndex: 100,
                                                     padding: '0 4px',
                                                     display: 'flex',
                                                     flexDirection: 'column',
                                                     alignItems: 'center',
                                                     paddingBottom: 2,
-                                                    transition: resizingId === sig.id ? 'none' : 'box-shadow 0.2s'
+                                                    transition: resizingId === sig.id ? 'none' : 'all 0.2s'
                                                 }}
                                                 title="Kéo thả để di chuyển, kéo góc để chỉnh cỡ"
                                             >
                                                 {/* Resize Handle */}
-                                                {!isPlacingMode && (
+                                                {!isPlacingMode && (hoveredSigId === sig.id || resizingId === sig.id) && (
                                                     <div
                                                         onMouseDown={(e) => handleResizeMouseDown(e, sig)}
                                                         style={{
@@ -452,29 +455,31 @@ export const PDFSignatureModal: React.FC<PDFSignatureModalProps> = ({
                                                         }}
                                                     />
                                                 )}
-                                                <Button
-                                                    type="text"
-                                                    danger
-                                                    size="small"
-                                                    icon={<DeleteOutlined />}
-                                                    onClick={(e) => handleRemoveSignature(sig.id, e)}
-                                                    style={{
-                                                        position: 'absolute',
-                                                        top: -12,
-                                                        right: -12,
-                                                        zIndex: 101,
-                                                        backgroundColor: '#fff',
-                                                        borderRadius: '50%',
-                                                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                                                        padding: 0,
-                                                        width: 24,
-                                                        height: 24,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        minWidth: 24
-                                                    }}
-                                                />
+                                                {(hoveredSigId === sig.id || resizingId === sig.id) && (
+                                                    <Button
+                                                        type="text"
+                                                        danger
+                                                        size="small"
+                                                        icon={<DeleteOutlined />}
+                                                        onClick={(e) => handleRemoveSignature(sig.id, e)}
+                                                        style={{
+                                                            position: 'absolute',
+                                                            top: -12,
+                                                            right: -12,
+                                                            zIndex: 101,
+                                                            backgroundColor: '#fff',
+                                                            borderRadius: '50%',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                                                            padding: 0,
+                                                            width: 24,
+                                                            height: 24,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            minWidth: 24
+                                                        }}
+                                                    />
+                                                )}
                                                 {signatureImageUrl ? (
                                                     <img
                                                         src={signatureImageUrl}

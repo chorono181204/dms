@@ -391,7 +391,7 @@ export default function ApprovalPages({ type }: ApprovalPageProps) {
     try {
       // Fetch PDF for signing
       const filePath = encodeURIComponent(doc.content);
-      const url = `${getBackendUrl()}/v1/upload/download?path=` + filePath + '&inline=true';
+      const url = `${getBackendUrl()}/v1/upload/download?path=` + filePath + '&inline=true&raw=true';
 
       const token = localStorage.getItem('accessToken');
       const response = await fetch(url, {

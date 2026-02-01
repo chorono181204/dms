@@ -11,6 +11,7 @@ interface CategoryModalProps {
     parentId?: number | null;
     category?: any; // If editing
     isSubFolder?: boolean; // If true, hide global/department scope options (inherit or simple)
+    initialValues?: { isGlobal?: boolean; departmentId?: number | null }; // New prop for preset context
 }
 
 const CategoryModal: React.FC<CategoryModalProps> = ({
@@ -19,7 +20,8 @@ const CategoryModal: React.FC<CategoryModalProps> = ({
     onSuccess,
     parentId,
     category,
-    isSubFolder
+    isSubFolder,
+    initialValues // Destructure new prop
 }) => {
     const [form] = Form.useForm();
     const { user } = useAuth();
@@ -43,13 +45,22 @@ const CategoryModal: React.FC<CategoryModalProps> = ({
                     visibility: visibility,
                 });
             } else {
-                // Default value for new category
+                // Default value logic
+                let defaultVisibility = 'PRIVATE';
+                if (initialValues) {
+                    if (initialValues.isGlobal) {
+                        defaultVisibility = 'PUBLIC';
+                    } else if (initialValues.departmentId === user?.departmentId) {
+                        defaultVisibility = 'DEPARTMENT';
+                    }
+                }
+
                 form.setFieldsValue({
-                    visibility: 'PRIVATE'
+                    visibility: defaultVisibility
                 });
             }
         }
-    }, [visible, category, form]);
+    }, [visible, category, form, initialValues, user]);
 
     const handleOk = async () => {
         try {
@@ -68,20 +79,21 @@ const CategoryModal: React.FC<CategoryModalProps> = ({
                 payload.departmentId = null;
             } else if (values.visibility === 'DEPARTMENT') {
                 payload.isGlobal = false;
-                if (user?.departmentId) {
+                // Use initialValues departmentId if present (to keep in same context), otherwise user's dept
+                if (initialValues?.departmentId) {
+                    payload.departmentId = initialValues.departmentId;
+                } else if (user?.departmentId) {
                     payload.departmentId = user.departmentId;
                 } else {
-                    // Start with no dept? Or enforce?
-                    // Ideally should warn if user has no dept
                     payload.departmentId = null;
                 }
             } else {
                 // PRIVATE
                 payload.isGlobal = false;
-                // Currently private folders still need a physical hom
-                // We default them to the user's department for physical storage
-                // But logically they are private
-                if (user?.departmentId) {
+                // Private folders still need a physical home
+                if (initialValues?.departmentId) {
+                    payload.departmentId = initialValues.departmentId;
+                } else if (user?.departmentId) {
                     payload.departmentId = user.departmentId;
                 } else {
                     payload.departmentId = null;

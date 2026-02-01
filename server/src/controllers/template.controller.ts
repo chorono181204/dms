@@ -7,21 +7,81 @@ import prisma from '../client';
 import fs from 'fs';
 import path from 'path';
 
-// Helper to save file to G-Drive
-const saveTemplateFile = (file: Express.Multer.File, category: string, name: string) => {
-    // Target structure: G:\My Drive\DMS\{category}\Mẫu
-    const targetRoot = 'G:\\My Drive\\DMS';
-    const targetDir = path.join(targetRoot, category || 'Chưa phân loại', 'Mẫu');
+// Helper to get upload root (matches document.controller.ts)
+const getUploadRoot = () => {
+    const PREFERRED_ROOT = 'G:\\DMS_DATA';
+    const GDRIVE_ROOT = 'G:\\My Drive\\DMS';
+    const FALLBACK_ROOT = path.join(__dirname, '../../uploads');
 
-    if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
+    try {
+        if (fs.existsSync('G:\\')) {
+            if (fs.existsSync('G:\\My Drive')) {
+                const gDrivePath = GDRIVE_ROOT;
+                if (!fs.existsSync(gDrivePath)) {
+                    fs.mkdirSync(gDrivePath, { recursive: true });
+                }
+                return gDrivePath;
+            }
+            if (!fs.existsSync(PREFERRED_ROOT)) {
+                fs.mkdirSync(PREFERRED_ROOT, { recursive: true });
+            }
+            return PREFERRED_ROOT;
+        }
+    } catch (e) {
+        // G drive access error
+    }
+    return FALLBACK_ROOT;
+};
+
+// Helper to save file with hierarchical structure (Async, matches Document logic)
+const saveTemplateFile = async (file: Express.Multer.File, departmentId: number | undefined, categoryId: number | undefined, name: string) => {
+    const root = getUploadRoot();
+    let finalPath = root;
+
+    // 1. Determine Department
+    let departmentName = 'General';
+    if (departmentId) {
+        const dept = await prisma.department.findUnique({ where: { id: departmentId } });
+        if (dept) {
+            departmentName = dept.name;
+        }
+    }
+
+    // 2. Determine Category Path (Recursive)
+    let categoryPathParts: string[] = [];
+    if (categoryId) {
+        let currentId = categoryId;
+        while (currentId) {
+            const cat = await prisma.category.findUnique({ where: { id: currentId } });
+            if (cat) {
+                categoryPathParts.unshift(cat.name);
+                currentId = cat.parentId || 0;
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Sanitization helper
+    const sanitize = (name: string) => name.replace(/[<>:"/\\|?*]/g, '_');
+
+    const safeDept = sanitize(departmentName);
+    const safeCatPath = categoryPathParts.map(sanitize).join(path.sep);
+
+    // Construct full path: ROOT / Dept / Cat / SubCat
+    finalPath = path.join(root, safeDept, safeCatPath);
+
+    // Create directory
+    if (!fs.existsSync(finalPath)) {
+        fs.mkdirSync(finalPath, { recursive: true });
     }
 
     // Use the provided Name for the filename, keeping original extension
-    const ext = path.extname(file.originalname); // .docx
-    const safeName = name.replace(/[^a-zA-Z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ \-_]/g, '_');
-    const finalFilename = `${safeName}${ext}`;
-    const targetPath = path.join(targetDir, finalFilename);
+    const ext = path.extname(file.originalname);
+    const safeBaseName = sanitize(name);
+    // Add timestamp to avoid collisions
+    const finalFilename = `${safeBaseName}_${Date.now()}${ext}`;
+    const targetPath = path.join(finalPath, finalFilename);
 
     try {
         // Move file
@@ -64,13 +124,9 @@ const createTemplate = catchAsync(async (req, res) => {
 
     // 2. Handle Content / File
     if (req.file) {
-        let categoryName = 'Chưa phân loại';
         const catId = req.body.categoryId ? parseInt(req.body.categoryId as string) : undefined;
-        if (catId) {
-            const category = await prisma.category.findUnique({ where: { id: catId } });
-            if (category) categoryName = category.name;
-        }
-        cleanBody.content = saveTemplateFile(req.file, categoryName, cleanBody.name);
+        // Use async save function
+        cleanBody.content = await saveTemplateFile(req.file, deptId, catId, cleanBody.name);
     } else if (req.body.content) {
         cleanBody.content = req.body.content;
     } else {
@@ -226,16 +282,16 @@ const updateTemplate = catchAsync(async (req, res) => {
 
     // Handle File Update or Rename/Move
     if (req.file) {
-        // ... (existing upload logic)
-        let categoryName = 'Chưa phân loại';
-        const catId = updateBody.categoryId || existing?.categoryId;
-        if (catId) {
-            const category = await prisma.category.findUnique({ where: { id: catId } });
-            if (category) categoryName = category.name;
-        }
+        const rawCatId = updateBody.categoryId !== undefined ?
+            (req.body.categoryId ? parseInt(req.body.categoryId as string) : undefined)
+            : existing?.categoryId;
+        const catId = rawCatId === null ? undefined : rawCatId;
+        const deptId = existing.departmentId === null ? undefined : existing.departmentId; // Usually dept doesn't change on simple update, assuming logic matches doc
+
         const name = updateBody.name || existing?.name;
 
-        updateBody.content = saveTemplateFile(req.file, categoryName, name || 'unnamed');
+        // Use async save
+        updateBody.content = await saveTemplateFile(req.file, deptId, catId, name || 'unnamed');
 
         // Delete old file if it's different (e.g., changed extension .docx -> .pdf)
         if (existing?.content && existing.content.includes('G:\\') && existing.content !== updateBody.content) {
@@ -248,39 +304,73 @@ const updateTemplate = catchAsync(async (req, res) => {
             }
         }
     } else if (existing?.content && existing.content.includes('G:\\')) {
-        // Check if Name or Category changed
-        const newName = updateBody.name || existing.name;
-        let newCategoryName = 'Chưa phân loại';
-        const catIdInput = req.body.categoryId;
-        const catId = catIdInput ? parseInt(catIdInput as string) : existing.categoryId;
-        if (catId) {
-            const category = await prisma.category.findUnique({ where: { id: catId } });
-            if (category) newCategoryName = category.name;
-        }
+        // --- MOVE LOGIC (Matches Document Controller) ---
+        const sanitize = (name: string) => name.replace(/[<>:"/\\|?*]/g, '_');
 
+        const newName = updateBody.name || existing.name;
+        // Parse IDs safely
+        const targetCatId = req.body.categoryId !== undefined ?
+            (req.body.categoryId ? parseInt(req.body.categoryId) : undefined)
+            : existing.categoryId;
+        // Templates usually don't facilitate department change via simple update, but if they did:
+        const targetDeptId = existing.departmentId === null ? undefined : existing.departmentId;
+
+        // Detect Changes
         const nameChanged = req.body.name && req.body.name !== existing.name;
-        const categoryChanged = req.body.categoryId && parseInt(req.body.categoryId) !== existing.categoryId;
+        const categoryChanged = req.body.categoryId !== undefined && Number(req.body.categoryId) !== existing.categoryId;
+        // const deptChanged = ...
 
         if (nameChanged || categoryChanged) {
             try {
                 const oldPath = existing.content;
                 if (fs.existsSync(oldPath)) {
-                    // Start moving/renaming
-                    const targetRoot = 'G:\\My Drive\\DMS';
-                    const targetDir = path.join(targetRoot, newCategoryName, 'Mẫu');
+                    // 1. Determine Root
+                    const root = getUploadRoot();
 
+                    // 2. Resolve Target Path
+                    let relativePath = '';
+                    let departmentName = 'General';
+
+                    if (targetDeptId) {
+                        const dept = await prisma.department.findUnique({ where: { id: targetDeptId } });
+                        if (dept) departmentName = dept.name;
+                    }
+
+                    if (targetCatId) {
+                        // Re-fetch hierarchy for target category
+                        let categoryPathParts: string[] = [];
+                        let currentId = targetCatId;
+                        while (currentId) {
+                            const cat = await prisma.category.findUnique({ where: { id: currentId } });
+                            if (cat) {
+                                categoryPathParts.unshift(cat.name);
+                                currentId = cat.parentId || 0;
+                            } else {
+                                break;
+                            }
+                        }
+                        relativePath = [sanitize(departmentName), ...categoryPathParts.map(sanitize)].join(path.sep);
+                    } else {
+                        relativePath = sanitize(departmentName);
+                    }
+
+                    // 3. Construct Full Path
+                    const targetDir = path.join(root, relativePath);
                     if (!fs.existsSync(targetDir)) {
                         fs.mkdirSync(targetDir, { recursive: true });
                     }
 
+                    // 4. New Filename
                     const ext = path.extname(oldPath);
-                    const safeName = newName.replace(/[^a-zA-Z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝᴮỴỶỸĐ \-_]/g, '_');
-                    const newFilename = `${safeName}${ext}`;
+                    const safeBaseName = sanitize(newName);
+                    const newFilename = `${safeBaseName}_${Date.now()}${ext}`; // Add timestamp
                     const newPath = path.join(targetDir, newFilename);
 
+                    // 5. Execute Move
                     if (oldPath !== newPath) {
                         try {
                             fs.renameSync(oldPath, newPath);
+                            updateBody.content = newPath;
                         } catch (e: any) {
                             if (e.code === 'EXDEV') {
                                 fs.copyFileSync(oldPath, newPath);
@@ -291,6 +381,7 @@ const updateTemplate = catchAsync(async (req, res) => {
                         }
                         updateBody.content = newPath;
                     }
+
                 }
             } catch (error) {
                 console.error('Error renaming/moving file:', error);

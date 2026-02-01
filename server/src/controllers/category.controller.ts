@@ -144,7 +144,7 @@ const getCategoryBreadcrumbs = catchAsync(async (req, res) => {
 
 const getCategoryContents = catchAsync(async (req, res) => {
     const user = req.user as any;
-    const { search, isReference, createdBy, departmentId } = req.query; // Extract search, isReference, createdBy, departmentId params
+    const { search, isReference, createdBy, departmentId, type } = req.query; // Extract params
     const options = pick(req.query, ['sortBy', 'limit', 'page']);
 
     const contents = await categoryService.getCategoryContents(
@@ -154,7 +154,8 @@ const getCategoryContents = catchAsync(async (req, res) => {
         search as string,
         isReference as string,
         createdBy as string,
-        departmentId ? parseInt(departmentId as string) : undefined // Pass departmentId
+        departmentId ? parseInt(departmentId as string) : undefined,
+        type as string // Pass type (document | template)
     );
     res.send(contents);
 });

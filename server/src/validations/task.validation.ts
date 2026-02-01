@@ -6,7 +6,8 @@ const createTask = {
         description: Joi.string().allow('', null),
         priority: Joi.string().valid('LOW', 'NORMAL', 'HIGH', 'URGENT'),
         status: Joi.string().valid('TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'),
-        assigneeId: Joi.number().allow(null),
+        assigneeIds: Joi.array().items(Joi.number()).single().optional(),
+        approverId: Joi.number().allow(null),
         assignerId: Joi.number().optional(), // Usually from auth
         departmentId: Joi.number().allow(null),
         dueDate: Joi.date().allow(null),
@@ -19,7 +20,9 @@ const getTasks = {
         filter: Joi.string().valid('all', 'assigned', 'created', 'department'),
         sortBy: Joi.string(),
         limit: Joi.number().integer(),
-        page: Joi.number().integer()
+        page: Joi.number().integer(),
+        startDate: Joi.string().allow('', null),
+        endDate: Joi.string().allow('', null)
     })
 };
 
@@ -32,7 +35,9 @@ const updateTask = {
         description: Joi.string().allow('', null),
         priority: Joi.string().valid('LOW', 'NORMAL', 'HIGH', 'URGENT'),
         status: Joi.string().valid('TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'),
-        assigneeId: Joi.number().allow(null),
+        assigneeIds: Joi.array().items(Joi.number()).single().optional(),
+        approverId: Joi.number().allow(null),
+        assigneeId: Joi.number().allow(null), // Keep compatible or remove
         dueDate: Joi.date().allow(null),
         files: Joi.any()
     })
@@ -43,7 +48,8 @@ const updateTaskStatus = {
         taskId: Joi.string().required()
     }),
     body: Joi.object().keys({
-        status: Joi.string().valid('TODO', 'IN_PROGRESS', 'REVIEW', 'DONE').required()
+        status: Joi.string().valid('TODO', 'IN_PROGRESS', 'REVIEW', 'DONE').required(),
+        approverId: Joi.number().allow(null)
     })
 };
 

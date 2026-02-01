@@ -128,6 +128,7 @@ const uploadFile = catchAsync(async (req, res) => {
 const downloadFile = catchAsync(async (req, res) => {
     const filePath = req.query.path as string;
     const isInline = req.query.inline === 'true';
+    const isRaw = req.query.raw === 'true'; // If true, skip dynamic stamps (for signing)
     let user = req.user as any;
 
     // Manually verify token if not already authenticated (needed for direct URL access)
@@ -283,7 +284,7 @@ const downloadFile = catchAsync(async (req, res) => {
 
             console.log(`[WATERMARK] Applying ${watermarkType} to ${doc.title} (Visibility: ${doc.visibility})`);
 
-            if (watermarkType || doc.visibility) {
+            if ((watermarkType || doc.visibility) && !isRaw) {
                 try {
                     const modifiedPdf = await applyWatermark(pdfBuffer, {
                         type: watermarkType || WatermarkType.DRAFT,
@@ -328,6 +329,7 @@ const downloadFile = catchAsync(async (req, res) => {
 
 const viewFile = catchAsync(async (req, res) => {
     const filePath = req.query.path as string;
+    const isRaw = req.query.raw === 'true'; // If true, skip dynamic stamps (for signing)
     const user = req.user as any;
 
     if (!fs.existsSync(filePath)) {
@@ -450,7 +452,7 @@ const viewFile = catchAsync(async (req, res) => {
             else if (doc.status === 'APPROVED' || doc.status === 'SIGNED') watermarkType = WatermarkType.APPROVED;
             else if (doc.status === 'ARCHIVED' || doc.status === 'REJECTED') watermarkType = WatermarkType.OBSOLETE;
 
-            if (watermarkType || doc.visibility) {
+            if ((watermarkType || doc.visibility) && !isRaw) {
                 try {
                     const modifiedPdf = await applyWatermark(pdfBuffer, {
                         type: watermarkType || WatermarkType.DRAFT,

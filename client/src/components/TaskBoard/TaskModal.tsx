@@ -50,7 +50,8 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                     description: task.description,
                     priority: task.priority,
                     status: task.status,
-                    assigneeId: task.assigneeId,
+                    assigneeIds: task.assignees?.map((a: any) => a.id) || [],
+                    approverId: task.approverId,
                     dueDate: task.dueDate ? dayjs(task.dueDate) : null,
                 });
 
@@ -61,7 +62,8 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                 form.resetFields();
                 form.setFieldsValue({
                     status: 'TODO',
-                    priority: 'NORMAL'
+                    priority: 'NORMAL',
+                    assigneeIds: []
                     // Don't set default assigneeId - let user choose
                 });
                 setFileList([]);
@@ -205,8 +207,9 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
 
                 <Row gutter={16}>
                     <Col span={12}>
-                        <Form.Item name="assigneeId" label="Giao cho">
+                        <Form.Item name="assigneeIds" label="Giao cho (nhiều người)">
                             <Select
+                                mode="multiple"
                                 showSearch
                                 placeholder="Chọn người thực hiện"
                                 optionFilterProp="children"
@@ -216,14 +219,12 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                             >
                                 {users
                                     .filter(u => {
-                                        // Don't show current user (can't assign to yourself)
-                                        if (u.id === currentUser?.id) return false;
+                                        // Don't show current user (can't assign to yourself) - Actually allow self-assignment for tracking
+                                        // if (u.id === currentUser?.id) return false;
 
-                                        // Admin overlap: hide all Admins
-                                        if (u.role === 'ADMIN') return false;
+                                        // Admin overlap: hide all Admins? No, maybe assign to admin.
+                                        // if (u.role === 'ADMIN') return false;
 
-                                        // Allow Managers to assign to USERs, Chief Technicians, 
-                                        // and other Managers (to avoid empty list in dev/sparse data)
                                         return true;
                                     })
                                     .map(u => (
@@ -231,6 +232,25 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                                             {u.name || u.username} {u.department?.name ? ` - ${u.department.name}` : ''} {u.isChief ? '(KTV Trưởng)' : ''}
                                         </Option>
                                     ))}
+                            </Select>
+                        </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                        <Form.Item name="approverId" label="Người duyệt (Tùy chọn)">
+                            <Select
+                                showSearch
+                                allowClear
+                                placeholder="Chọn người duyệt"
+                                optionFilterProp="children"
+                                filterOption={(input, option: any) =>
+                                    (option?.children as unknown as string).toLowerCase().includes(input.toLowerCase())
+                                }
+                            >
+                                {users.map(u => (
+                                    <Option key={u.id} value={u.id}>
+                                        {u.name || u.username}
+                                    </Option>
+                                ))}
                             </Select>
                         </Form.Item>
                     </Col>
@@ -327,7 +347,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <Input.TextArea
                             rows={3}
-                            placeholder={currentUser?.id === detailedTask.assigneeId ? "Nhập nội dung báo cáo kết quả..." : "Nhập bình luận / phản hồi..."}
+                            placeholder={detailedTask.assignees?.some((a: any) => a.id === currentUser?.id) ? "Nhập nội dung báo cáo kết quả..." : "Nhập bình luận / phản hồi..."}
                             value={commentContent}
                             onChange={e => setCommentContent(e.target.value)}
                         />
@@ -342,7 +362,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
 
                             <div style={{ display: 'flex', gap: 8 }}>
                                 {/* Strict Role Separation */}
-                                {currentUser?.id === detailedTask.assigneeId ? (
+                                {detailedTask.assignees?.some((a: any) => a.id === currentUser?.id) ? (
                                     <Button
                                         type="primary"
                                         ghost

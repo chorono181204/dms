@@ -63,8 +63,9 @@ model User {
   signatureRequests SignatureRequest[]
 
   // Task Management Relations
-  assignedTasks Task[]        @relation("TaskAssignee")
+  assignedTasks Task[]        @relation("TaskAssignees")
   createdTasks  Task[]        @relation("TaskAssigner")
+  approvedTasks Task[]        @relation("TaskApprover")
   taskComments  TaskComment[]
 
   notifications Notification[]
@@ -394,12 +395,16 @@ model Task {
   priority    String  @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
 
   // Assignee (User who does the task)
-  assigneeId Int?
-  assignee   User? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  // Assignee (User who does the task) - Many to Many
+  assignees User[] @relation("TaskAssignees")
 
   // Assigner (User who created/assigned the task)
   assignerId Int
   assigner   User @relation("TaskAssigner", fields: [assignerId], references: [id])
+
+  // Approver (Person who reviews/approves the task)
+  approverId Int?
+  approver   User? @relation("TaskApprover", fields: [approverId], references: [id])
 
   // Department scope (Optional: if assigned to a whole department or for filtering)
   departmentId Int?

@@ -8,7 +8,7 @@ interface FolderTreeModalProps {
     onCancel: () => void;
     onSelect: (targetFolderId: number | null) => void;
     movingItemId?: number | null;
-    movingItemType?: 'document' | 'folder';
+    movingItemType?: 'document' | 'folder' | 'template';
     currentParentId?: number | null;
     departmentId?: number | null;
     departmentName?: string;

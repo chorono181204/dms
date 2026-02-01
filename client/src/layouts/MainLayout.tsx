@@ -42,6 +42,8 @@ import 'dayjs/locale/vi'
 dayjs.extend(relativeTime)
 dayjs.locale('vi')
 
+import notificationSoundUrl from '../assets/sound.mp3'
+
 const { Header, Sider, Content } = Layout
 
 function MainLayout() {
@@ -164,7 +166,7 @@ function MainLayout() {
 
   // Initialize sound once
   useEffect(() => {
-    notificationSound.current = new Audio('sound.mp3')
+    notificationSound.current = new Audio(notificationSoundUrl)
   }, [])
 
   // Socket notification logic

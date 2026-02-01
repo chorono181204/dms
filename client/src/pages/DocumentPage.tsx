@@ -281,7 +281,7 @@ const DocumentPage: React.FC = () => {
             }
 
             const filePath = encodeURIComponent(record.content);
-            const url = `${getBackendUrl()}/v1/upload/download?path=${filePath}&inline=true&token=${token}`;
+            const url = `${getBackendUrl()}/v1/upload/download?path=${filePath}&inline=true&raw=true&token=${token}`;
 
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }

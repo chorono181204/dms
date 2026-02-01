@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Row, Col, Typography, Input, Button, Radio, Space, Spin, message } from 'antd';
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Typography, Button, Radio, Space, Spin, message, DatePicker } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import { DndContext, DragOverlay, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 
 import TaskColumn from '../components/TaskBoard/TaskColumn';
 import TaskCard from '../components/TaskBoard/TaskCard';
@@ -12,12 +12,14 @@ import { socketService } from '../api/services/socket.service';
 import { useAuth } from '../contexts/AuthContext';
 
 const { Title } = Typography;
+const { RangePicker } = DatePicker;
 
 const TaskPage: React.FC = () => {
     const { user } = useAuth();
     const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.isChief;
     const [tasks, setTasks] = useState<any[]>([]);
     const [filter, setFilter] = useState(canManage ? 'all' : 'assigned'); // 'all', 'assigned', 'created'
+    const [dateRange, setDateRange] = useState<any>(null);
     const [loading, setLoading] = useState(false);
 
     // Modal State
@@ -50,12 +52,18 @@ const TaskPage: React.FC = () => {
             socketService.off('new_task', handleUpdate);
             socketService.off('task_updated', handleUpdate);
         };
-    }, [filter]);
+    }, [filter, dateRange]);
 
     const loadTasks = async () => {
         setLoading(true);
         try {
-            const data = await taskService.getTasks(filter === 'all' ? undefined : filter);
+            let startStr = undefined;
+            let endStr = undefined;
+            if (dateRange && dateRange[0]) {
+                startStr = dateRange[0].startOf('day').toISOString();
+                endStr = dateRange[1].endOf('day').toISOString();
+            }
+            const data = await taskService.getTasks(filter === 'all' ? undefined : filter, startStr, endStr);
             setTasks(data);
         } catch (error) {
             message.error('Lỗi tải danh sách công việc');
@@ -105,13 +113,17 @@ const TaskPage: React.FC = () => {
             }
         }
 
-        // Specific Rule: Only Assigner can move to DONE
-        // We need to check if user is assigner. 
-        // Note: activeTask is simpler to use than finding task from array again, 
-        // but 'task' variable is already defined at line 80.
-        if ((newStatus === 'DONE' || (overId === 'DONE' && isColumn)) && task.assignerId !== user.id) {
-            message.error('Chỉ người giao việc mới được phép chuyển sang Hoàn thành');
-            return;
+        // Specific Rule: Backend handles permission and workflow (e.g. converting DONE to REVIEW)
+        // However, if task IS ALREADY in REVIEW, only Approver (or Assigner/Admin) can move to DONE.
+        // We block Assignee from moving REVIEW -> DONE here to avoid backend error 403.
+        if (task.status === 'REVIEW' && newStatus === 'DONE') {
+            const isApprover = task.approver?.id === user?.id || task.approverId === user?.id; // Check both if possible
+            const isAssigner = task.assigner?.id === user?.id || task.assignerId === user?.id;
+
+            if (!isApprover && !isAssigner && user?.role !== 'ADMIN') {
+                message.error('Bạn chờ người duyệt xác nhận nhé!');
+                return;
+            }
         }
 
         if (task.status !== newStatus) {
@@ -159,6 +171,12 @@ const TaskPage: React.FC = () => {
                         <Radio.Button value="assigned">Việc của tôi</Radio.Button>
                         {canManage && <Radio.Button value="created">Việc tôi giao</Radio.Button>}
                     </Radio.Group>
+                    <RangePicker
+                        onChange={(dates) => setDateRange(dates)}
+                        style={{ width: 250 }}
+                        placeholder={['Từ ngày', 'Đến ngày']}
+                        format="DD/MM/YYYY"
+                    />
                 </Space>
                 {canManage && (
                     <Button type="primary" icon={<PlusOutlined />} onClick={handleAddTask}>
