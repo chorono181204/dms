@@ -182,6 +182,31 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
         setAttachments(prev => prev.filter(item => item.id !== attId));
     };
 
+    const handleDownload = async (file: any) => {
+        try {
+            message.loading({ content: 'Đang tải xuống...', key: 'download' });
+            const response = await fetch(`/api/v1/upload/download?path=${encodeURIComponent(file.filePath)}&token=${token}`);
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Lỗi tải xuống');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.fileName;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            message.success({ content: 'Tải xuống thành công', key: 'download' });
+        } catch (error: any) {
+            message.error({ content: error.message || 'Không thể tải tập tin', key: 'download' });
+        }
+    };
+
     return (
         <Modal
             title={task ? (canEdit ? "Chi tiết & Cập nhật công việc" : "Chi tiết công việc (Chỉ xem)") : "Thêm công việc mới"}
@@ -292,9 +317,9 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                         <div style={{ marginBottom: 8 }}>Tài liệu đính kèm:</div>
                         {attachments.map((att: any) => (
                             <div key={att.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                <a href={`/api/v1/upload/download?path=${encodeURIComponent(att.filePath)}&token=${token}`} target="_blank" rel="noopener noreferrer">
+                                <Button type="link" onClick={() => handleDownload(att)} style={{ padding: 0 }}>
                                     {att.fileName}
-                                </a>
+                                </Button>
                                 {canEdit && (
                                     <Button
                                         type="text"
@@ -351,11 +376,11 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                                         {item.attachments && item.attachments.length > 0 && (
                                             <div style={{ marginTop: 8 }}>
                                                 {item.attachments.map((att: any) => (
-                                                    <div key={att.id}>
+                                                    <div key={att.id} style={{ display: 'flex', alignItems: 'center' }}>
                                                         <PaperClipOutlined />
-                                                        <a href={`/api/v1/upload/download?path=${encodeURIComponent(att.filePath)}&token=${token}`} style={{ marginLeft: 4 }}>
+                                                        <Button type="link" size="small" onClick={() => handleDownload(att)} style={{ marginLeft: 4 }}>
                                                             {att.fileName}
-                                                        </a>
+                                                        </Button>
                                                     </div>
                                                 ))}
                                             </div>
