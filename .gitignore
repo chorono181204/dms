@@ -54,3 +54,11 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
+
+# Large files / Installers
+*.exe
+*.msi
+*.msix
+*.zip
+*.rar
+

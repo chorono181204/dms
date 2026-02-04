@@ -7,6 +7,7 @@ import * as userService from '../api/services/user.service';
 import { socketService } from '../api/services/socket.service';
 import dayjs from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
+import { getApiUrl } from '../utils/config';
 
 const { Text, Title } = Typography;
 
@@ -336,7 +337,7 @@ const ChatPage: React.FC = () => {
                                 if (idx >= 4) return (
                                     <Image
                                         key={idx}
-                                        src={`/api/v1/upload/view?path=${encodeURIComponent(att.filePath)}`}
+                                        src={`${getApiUrl()}/upload/view?path=${encodeURIComponent(att.filePath)}`}
                                         style={{ display: 'none' }}
                                     />
                                 );
@@ -352,7 +353,7 @@ const ChatPage: React.FC = () => {
                                         justifyContent: msg.senderId === currentUser?.id ? 'flex-end' : 'flex-start'
                                     }}>
                                         <Image
-                                            src={`/api/v1/upload/view?path=${encodeURIComponent(att.filePath)}`}
+                                            src={`${getApiUrl()}/upload/view?path=${encodeURIComponent(att.filePath)}`}
                                             style={{
                                                 width: '100%',
                                                 height: 'auto',
@@ -399,7 +400,7 @@ const ChatPage: React.FC = () => {
                                 className="file-attachment-card"
                                 onClick={() => {
                                     const link = document.createElement('a');
-                                    link.href = `/api/v1/upload/download?path=${encodeURIComponent(att.filePath)}`;
+                                    link.href = `${getApiUrl()}/upload/download?path=${encodeURIComponent(att.filePath)}`;
                                     link.download = att.fileName;
                                     document.body.appendChild(link);
                                     link.click();

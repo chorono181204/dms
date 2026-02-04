@@ -10,6 +10,7 @@ const createCategory = {
 
         departmentIds: Joi.array().items(Joi.number()),
         parentId: Joi.number().integer().allow(null),
+        isTemplate: Joi.boolean(), // Allow isTemplate
     }),
 };
 
@@ -44,6 +45,7 @@ const updateCategory = {
             isGlobal: Joi.boolean(),
             departmentIds: Joi.array().items(Joi.number()),
             parentId: Joi.number().integer().allow(null),
+            isTemplate: Joi.boolean(), // Allow isTemplate
         })
         .min(1),
 };

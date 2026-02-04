@@ -12,6 +12,7 @@ interface CategoryModalProps {
     category?: any; // If editing
     isSubFolder?: boolean; // If true, hide global/department scope options (inherit or simple)
     initialValues?: { isGlobal?: boolean; departmentId?: number | null }; // New prop for preset context
+    isTemplate?: boolean; // New prop for template folders
 }
 
 const CategoryModal: React.FC<CategoryModalProps> = ({
@@ -21,7 +22,8 @@ const CategoryModal: React.FC<CategoryModalProps> = ({
     parentId,
     category,
     isSubFolder,
-    initialValues // Destructure new prop
+    initialValues, // Destructure new prop
+    isTemplate
 }) => {
     const [form] = Form.useForm();
     const { user } = useAuth();
@@ -71,12 +73,27 @@ const CategoryModal: React.FC<CategoryModalProps> = ({
                 name: values.name,
                 description: values.description,
                 isActive: true, // Default to active
+                isTemplate: isTemplate || false, // Specific flag
             };
 
             // Map visibility to payload
             if (values.visibility === 'PUBLIC') {
-                payload.isGlobal = true;
-                payload.departmentId = null;
+                // If not ADMIN, PUBLIC visibility does NOT mean isGlobal system folder.
+                if (user?.role === 'ADMIN') {
+                    payload.isGlobal = true;
+                    payload.departmentId = null;
+                } else {
+                    payload.isGlobal = false;
+                    // Use initialValues departmentId if present (to keep in same context), otherwise user's dept
+                    if (initialValues?.departmentId) {
+                        payload.departmentId = initialValues.departmentId;
+                    } else if (user?.departmentId) {
+                        payload.departmentId = user.departmentId;
+                    } else {
+                        // If no department, maybe fallback to null (rare for users)
+                        payload.departmentId = null;
+                    }
+                }
             } else if (values.visibility === 'DEPARTMENT') {
                 payload.isGlobal = false;
                 // Use initialValues departmentId if present (to keep in same context), otherwise user's dept

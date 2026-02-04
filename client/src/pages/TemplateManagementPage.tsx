@@ -6,11 +6,12 @@ import {
     DragOutlined, FileWordOutlined, FileExcelOutlined, FileOutlined
 } from '@ant-design/icons';
 import { ColumnsType } from 'antd/es/table';
-import templateService from '../services/template.service'; // Note: different path than document service
+import { deleteDocument, updateDocument } from '../api/services/document.service'; // Use document service
 import { getCategoryContents, getCategoryBreadcrumbs, moveCategory, deleteCategory } from '../api/services/category.service';
-import TemplateModal from '../components/TemplateModal';
+import DocumentModal from '../components/DocumentModal'; // Use DocumentModal
 import FilePreviewModal from '../components/FilePreviewModal';
-import TemplateCard from '../components/TemplateCard';
+
+import DocumentCard from '../components/DocumentCard'; // Use DocumentCard for consistency if preferred
 import FolderCard from '../components/FolderCard';
 import CategoryModal from '../components/CategoryModal';
 import { getBackendUrl } from '../utils/config';
@@ -225,11 +226,11 @@ export default function TemplateManagementPage() {
             okType: 'danger',
             onOk: async () => {
                 try {
-                    await templateService.deleteTemplate(id);
+                    await deleteDocument(id);
                     message.success('Đã xóa mẫu thành công');
                     fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize);
                 } catch (error: any) {
-                    message.error(error.response?.data?.message || 'Lỗi xóa mẫu');
+                    message.error(error.response?.data?.message || 'Lỗi xóa mẫu'); // Fixed bracket
                 }
             },
         });
@@ -240,9 +241,10 @@ export default function TemplateManagementPage() {
             const viewUrl = `${getBackendUrl()}/v1/upload/download?path=${encodeURIComponent(record.content)}&inline=true&token=${localStorage.getItem('accessToken')}`;
 
             const ext = record.content.split('.').pop() || '';
-            const fullFileName = record.name.toLocaleLowerCase().endsWith(ext.toLowerCase())
-                ? record.name
-                : `${record.name}.${ext}`;
+            const tName = record.title || record.name;
+            const fullFileName = tName.toLocaleLowerCase().endsWith(ext.toLowerCase())
+                ? tName
+                : `${tName}.${ext}`;
 
             setPreviewUrl(viewUrl);
             setPreviewName(fullFileName);
@@ -292,7 +294,8 @@ export default function TemplateManagementPage() {
             if (sourceType === 'template') {
                 const fd = new FormData();
                 fd.append('categoryId', String(targetId));
-                await templateService.updateTemplate(sourceId, fd);
+                fd.append('isTemplate', 'true'); // Maintain template flag
+                await updateDocument(sourceId, fd);
                 message.success('Đã di chuyển mẫu');
             } else if (sourceType === 'folder') {
                 await moveCategory(sourceId, { newParentId: targetId });
@@ -315,7 +318,8 @@ export default function TemplateManagementPage() {
             if (movingItem.type === 'template') {
                 const fd = new FormData();
                 fd.append('categoryId', targetFolderId === null ? '' : String(targetFolderId));
-                await templateService.updateTemplate(movingItem.id, fd);
+                fd.append('isTemplate', 'true');
+                await updateDocument(movingItem.id, fd);
                 message.success('Đã di chuyển mẫu');
             } else {
                 await moveCategory(movingItem.id, { newParentId: targetFolderId });
@@ -430,9 +434,9 @@ export default function TemplateManagementPage() {
                     {record.type === 'folder' ? (
                         <FolderOpenOutlined style={{ fontSize: 24, color: '#1890ff' }} />
                     ) : (
-                        getFileIcon(record.name, record.content)
+                        getFileIcon(record.title || record.name, record.content)
                     )}
-                    <span style={{ fontWeight: 500 }}>{text}</span>
+                    <span style={{ fontWeight: 500 }}>{record.title || record.name}</span>
                 </Space>
             )
         },
@@ -570,11 +574,11 @@ export default function TemplateManagementPage() {
 
                                 return (
                                     <Col xs={24} sm={12} md={8} lg={6} xl={4} key={tpl.id}>
-                                        <TemplateCard
-                                            template={tpl}
+                                        <DocumentCard
+                                            document={tpl}
                                             menuItems={getTemplateMenuItems(tpl)}
                                             canDrag={canEdit}
-                                            onClick={() => handleView(tpl)}
+
                                         />
                                     </Col>
                                 );
@@ -629,20 +633,20 @@ export default function TemplateManagementPage() {
                     </Card>
                 )}
 
-                <TemplateModal
+                <DocumentModal
                     visible={modalVisible}
                     onCancel={() => setModalVisible(false)}
                     onSuccess={() => { setModalVisible(false); fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize); }}
-                    templateId={selectedTemplateId}
+                    documentId={selectedTemplateId}
                     defaultCategoryId={currentFolderId} // Pass current folder as default
-                    initialValues={currentFolderContext} // Pass context for template defaults
+                    isTemplate={true} // FORCE TEMPLATE MODE
                 />
 
                 <CategoryModal
                     visible={categoryModalVisible}
                     category={selectedFolderForEdit}
                     parentId={currentParentId}
-                    initialValues={currentFolderContext} // Pass context for new folder logic
+                    isTemplate={true} // FORCE TEMPLATE MODE
                     onCancel={() => setCategoryModalVisible(false)}
                     onSuccess={() => { setCategoryModalVisible(false); fetchFolderContents(currentFolderId, pagination.current, pagination.pageSize); }}
                 />

@@ -23,6 +23,10 @@ router
     .get(auth(), taskController.getTaskDetails);
 
 router
+    .route('/:taskId/attachments/:attachmentId')
+    .delete(auth(), taskController.deleteTaskAttachment);
+
+router
     .route('/:taskId/comments')
     .post(auth(), uploadMiddleware, taskController.addTaskComment);
 

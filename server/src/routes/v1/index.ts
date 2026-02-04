@@ -2,7 +2,7 @@ import express from 'express';
 import authRoute from './auth.route';
 import userRoute from './user.route';
 import departmentRoute from './department.route';
-import templateRoute from './template.route';
+// import templateRoute from './template.route'; // Removed
 import uploadRoute from './upload.route';
 import docsRoute from './docs.route';
 import config from '../../config/config';
@@ -29,10 +29,7 @@ const defaultRoutes = [
     path: '/departments',
     route: departmentRoute
   },
-  {
-    path: '/templates',
-    route: templateRoute
-  },
+  // templateRoute removed
   {
     path: '/upload',
     route: uploadRoute

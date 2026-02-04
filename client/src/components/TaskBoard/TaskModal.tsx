@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Form, Input, Select, DatePicker, Upload, Button, message, Row, Col, Avatar, Tabs, List, Skeleton, Divider } from 'antd';
-import { UploadOutlined, UserOutlined, SendOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { UploadOutlined, UserOutlined, SendOutlined, PaperClipOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import * as taskService from '../../api/services/task.service';
 import * as userService from '../../api/services/user.service';
@@ -38,6 +38,9 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
     // Admin override?
     const canEdit = isOwner || currentUser?.role === 'ADMIN';
 
+    const [attachments, setAttachments] = useState<any[]>([]);
+    const [deletedAttachmentIds, setDeletedAttachmentIds] = useState<number[]>([]);
+
     useEffect(() => {
         if (visible) {
             loadUsers();
@@ -55,8 +58,10 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                     dueDate: task.dueDate ? dayjs(task.dueDate) : null,
                 });
 
-                // Set initial files for preview? (Only basic view for now, upload adds new ones)
+                // Set initial files
                 setFileList([]);
+                setAttachments(task.attachments || []);
+                setDeletedAttachmentIds([]);
             } else {
                 setDetailedTask(null);
                 form.resetFields();
@@ -64,9 +69,10 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                     status: 'TODO',
                     priority: 'NORMAL',
                     assigneeIds: []
-                    // Don't set default assigneeId - let user choose
                 });
                 setFileList([]);
+                setAttachments([]);
+                setDeletedAttachmentIds([]);
             }
         }
     }, [visible, task, currentUser]);
@@ -75,6 +81,14 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
         try {
             const data = await taskService.getTaskDetails(taskId);
             setDetailedTask(data);
+            // Also update attachments from details in case the prop was stale, 
+            // but strictly only if we haven't modified them locally yet? 
+            // Actually, usually we trust the prop or the detail fetch. 
+            // Let's rely on prop for initial load as per existing logic, or sync here if safer.
+            // If we just opened, we can sync.
+            if (data.attachments) {
+                setAttachments(data.attachments);
+            }
         } catch (error) {
             console.error(error);
         }
@@ -104,8 +118,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
 
     const loadUsers = async () => {
         try {
-            // Fetch all users (scope='all') to allow assignment to other departments
-            // Filter restrictions (e.g. Chief not assigning to Manager) are handled in the render filter
             const data = await userService.getUsers({ limit: 100, scope: 'all' });
             setUsers(data.results || []);
         } catch (error) {
@@ -117,6 +129,11 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
         try {
             const values = await form.validateFields();
             setLoading(true);
+
+            // Process deletions first
+            if (deletedAttachmentIds.length > 0 && task) {
+                await Promise.all(deletedAttachmentIds.map(id => taskService.deleteTaskAttachment(task.id, id)));
+            }
 
             const submitData = {
                 ...values,
@@ -158,6 +175,11 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                 }
             }
         });
+    };
+
+    const handleRemoveAttachment = (attId: number) => {
+        setDeletedAttachmentIds(prev => [...prev, attId]);
+        setAttachments(prev => prev.filter(item => item.id !== attId));
     };
 
     return (
@@ -219,12 +241,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                             >
                                 {users
                                     .filter(u => {
-                                        // Don't show current user (can't assign to yourself) - Actually allow self-assignment for tracking
-                                        // if (u.id === currentUser?.id) return false;
-
-                                        // Admin overlap: hide all Admins? No, maybe assign to admin.
-                                        // if (u.role === 'ADMIN') return false;
-
                                         return true;
                                     })
                                     .map(u => (
@@ -271,14 +287,23 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                 </Form.Item>
 
                 {/* Existing Attachments Display */}
-                {task && task.attachments && task.attachments.length > 0 && (
+                {task && attachments && attachments.length > 0 && (
                     <div style={{ marginBottom: 16 }}>
                         <div style={{ marginBottom: 8 }}>Tài liệu đính kèm:</div>
-                        {task.attachments.map((att: any) => (
+                        {attachments.map((att: any) => (
                             <div key={att.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                <a href={`/api/v1/upload/download?path=${encodeURIComponent(att.filePath)}&token=${token}`}>
+                                <a href={`/api/v1/upload/download?path=${encodeURIComponent(att.filePath)}&token=${token}`} target="_blank" rel="noopener noreferrer">
                                     {att.fileName}
                                 </a>
+                                {canEdit && (
+                                    <Button
+                                        type="text"
+                                        danger
+                                        size="small"
+                                        icon={<DeleteOutlined />}
+                                        onClick={() => handleRemoveAttachment(att.id)}
+                                    />
+                                )}
                             </div>
                         ))}
                     </div>

@@ -22,7 +22,8 @@ async function main() {
     await prisma.documentVersion.deleteMany({});
     await prisma.documentAttachment.deleteMany({});
     await prisma.document.deleteMany({});
-    await prisma.template.deleteMany({});
+    // await prisma.document.deleteMany({}); // Removed duplicate
+    // await prisma.template.deleteMany({}); // Removed
     await prisma.category.deleteMany({});
     await prisma.user.deleteMany({});
     await prisma.department.deleteMany({});
@@ -67,6 +68,30 @@ async function main() {
         });
         categories.push(cat);
     }
+
+    // Seed Template Root Category
+    const templateRoot = await prisma.category.create({
+        data: {
+            name: 'Mẫu văn bản',
+            description: 'Thư mục gốc cho các mẫu văn bản',
+            isActive: true,
+            isTemplate: true, // Mark as template folder
+            isGlobal: true,
+            createdBy: 'system'
+        }
+    });
+
+    // Seed Template Sub-Category
+    await prisma.category.create({
+        data: {
+            name: 'Mẫu chung',
+            parentId: templateRoot.id,
+            isActive: true,
+            isTemplate: true,
+            isGlobal: true,
+            createdBy: 'system'
+        }
+    });
     console.log(`Created ${categories.length} categories.`);
 
     // 3. Seed Users

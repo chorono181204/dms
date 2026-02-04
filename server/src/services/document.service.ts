@@ -108,8 +108,11 @@ const queryDocuments = async (
  * @returns {Promise<Document | null>}
  */
 const getDocumentById = async (id: number): Promise<Document | null> => {
-    return prisma.document.findUnique({
-        where: { id },
+    return prisma.document.findFirst({
+        where: {
+            id,
+            deletedAt: null
+        },
         include: {
             department: { select: { id: true, name: true } },
             history: {

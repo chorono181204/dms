@@ -133,3 +133,8 @@ export const addTaskComment = async (taskId: number, data: any) => {
     const response = await axiosClient.post(`/tasks/${taskId}/comments`, data);
     return response.data;
 };
+
+export const deleteTaskAttachment = async (taskId: number, attachmentId: number) => {
+    const response = await axiosClient.delete(`/tasks/${taskId}/attachments/${attachmentId}`);
+    return response.data;
+};

@@ -16,7 +16,7 @@ model Department {
   name              String
   code              String            @unique // Mã khoa/phòng (KHS, KKB...)
   users             User[]
-  templates         Template[]
+  // templates         Template[] // Removed
   documents         Document[]
   categories        Category[]
   signatures        Signature[]
@@ -29,7 +29,7 @@ model Department {
   isSupervisory       Boolean              @default(false)
   tasks               Task[]
   documentPermissions DocumentPermission[]
-  templatePermissions TemplatePermission[]
+  // templatePermissions TemplatePermission[] // Removed
 }
 
 model User {
@@ -51,8 +51,8 @@ model User {
   digitalCert    String? // Serial number của chứng thư số
 
   // Quan hệ văn bản - REMOVED RELATIONS TO DECOUPLE
-  permissions         DocumentPermission[]
-  templatePermissions TemplatePermission[]
+  permissions DocumentPermission[]
+  // templatePermissions TemplatePermission[] // Removed
 
   // Auth
   // Token relation removed
@@ -73,50 +73,7 @@ model User {
   messages      Message[]
 }
 
-// 2. Mẫu văn bản
-model Template {
-  id      Int    @id @default(autoincrement())
-  name    String
-  content String // HTML/JSON content
-
-  categoryId Int?
-  category   Category? @relation(fields: [categoryId], references: [id])
-
-  // Data Isolation: Mẫu thuộc phòng ban nào
-  departmentId Int?
-  department   Department? @relation(fields: [departmentId], references: [id])
-
-  isActive Boolean @default(true)
-
-  // Phân quyền nâng cao
-  visibility  String               @default("PRIVATE") // PRIVATE, DEPARTMENT, PUBLIC
-  accessLevel String               @default("VIEW") // VIEW, EDIT
-  permissions TemplatePermission[]
-
-  createdBy String?
-  updatedBy String?
-}
-
-model TemplatePermission {
-  id Int @id @default(autoincrement())
-
-  templateId Int
-  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
-
-  userId Int?
-  user   User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  departmentId Int?
-  department   Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-
-  // Quyền: "VIEW", "EDIT", "DOWNLOAD"
-  permission String
-
-  createdBy String?
-  updatedBy String?
-
-  @@unique([templateId, userId, departmentId, permission])
-}
+// 2. Mẫu văn bản - REMOVED (Merged into Document)
 
 // 2.1 Danh mục tài liệu
 model Category {
@@ -139,25 +96,28 @@ model Category {
   departmentId Int?
   department   Department? @relation(fields: [departmentId], references: [id])
 
-  isGlobal Boolean @default(false)
+  isGlobal   Boolean @default(false)
+  isTemplate Boolean @default(false) // Changed: Identify if this category is for templates
 
   documents Document[]
 
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   createdBy String?
   updatedBy String?
-  templates Template[]
+  // templates Template[] // Removed
 }
 
 // 3. Văn bản & Dữ liệu
 model Document {
   id      Int     @id @default(autoincrement())
-  code    String? @unique // Số văn bản / Mã hồ sơ
+  code    String? // Số văn bản / Mã hồ sơ
   title   String
   content String // Nội dung HTML/JSON
 
   status String @default("DRAFT") // DRAFT, PENDING, APPROVED, SIGNED, REJECTED, ARCHIVED
+
+  isTemplate Boolean @default(false) // Changed: Identify if this document is a template
 
   // Data Isolation: Văn bản thuộc về phòng ban nào
   departmentId Int

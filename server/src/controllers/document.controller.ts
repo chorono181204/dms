@@ -162,7 +162,8 @@ const createDocument = catchAsync(async (req, res) => {
         updatedBy: user.username,
         updatedByName: user.name || user.username,
         currentVersion: 1,
-        isReference: req.body.isReference === 'true'
+        isReference: req.body.isReference === 'true',
+        isTemplate: req.body.isTemplate === 'true' // Add isTemplate flag
     };
 
     // Simplified permission logic: Use sharedUserIds and sharedDepartmentIds from frontend
@@ -209,9 +210,9 @@ const createDocument = catchAsync(async (req, res) => {
                 if (category) categoryName = category.name;
             }
 
-            // Auto-convert Convertible Files to PDF
+            // Auto-convert Convertible Files to PDF (UNLESS it is a Template)
             let fileToSave = mainFile;
-            if (isConvertibleFile(mainFile.path)) {
+            if (cleanBody.isTemplate !== true && isConvertibleFile(mainFile.path)) {
                 try {
                     console.log('Auto-converting file to PDF:', mainFile.originalname);
                     const pdfBuffer = await convertFileToPdf(mainFile.path);
@@ -370,7 +371,16 @@ const getDocuments = catchAsync(async (req, res) => {
         const baseFilter = { ...filter };
         // Remove those we handle specially or that shouldn't be strict AND
         delete baseFilter.departmentId;
+        delete baseFilter.departmentId;
         delete baseFilter.visibility;
+
+        // Default: Only show normal documents (isTemplate = false) unless explicitly requested
+        if (req.query.isTemplate !== 'true') {
+            baseFilter.isTemplate = false;
+        } else {
+            // If requesting templates, ensure filter is set to true (or handled by baseFilter if passed)
+            baseFilter.isTemplate = true;
+        }
 
         filter = {
             AND: [
@@ -534,7 +544,8 @@ const updateDocument = catchAsync(async (req, res) => {
         expirationDate: req.body.expirationDate ? new Date(req.body.expirationDate) : undefined,
         updatedBy: user.username,
         updatedByName: user.name || user.username,
-        isReference: req.body.isReference === undefined ? undefined : req.body.isReference === 'true'
+        isReference: req.body.isReference === undefined ? undefined : req.body.isReference === 'true',
+        isTemplate: req.body.isTemplate === undefined ? undefined : req.body.isTemplate === 'true'
     };
 
     // STRICT: Only Admin or QLCL can set "Confidential" (PRIVATE)
@@ -640,7 +651,7 @@ const updateDocument = catchAsync(async (req, res) => {
             let fileToSave = mainFile;
             let fileSize = mainFile.size;
 
-            if (isConvertibleFile(mainFile.path)) {
+            if (updateBody.isTemplate !== true && existing.isTemplate !== true && isConvertibleFile(mainFile.path)) {
                 try {
                     console.log('Auto-converting file to PDF on update:', mainFile.originalname);
                     const pdfBuffer = await convertFileToPdf(mainFile.path);
@@ -1263,7 +1274,8 @@ const getPendingApprovals = catchAsync(async (req, res) => {
     const filter: any = {
         status: 'PENDING',
         // Don't show documents created by the current user
-        createdBy: { not: user.username }
+        createdBy: { not: user.username },
+        deletedAt: null
     };
 
     // If not ADMIN, only show documents in user's department
@@ -1415,7 +1427,9 @@ const getDashboardStats = catchAsync(async (req, res) => {
     const user = req.user as any;
 
     // 1. Total Documents (Accessible to User)
-    const docWhere: any = {};
+    const docWhere: any = {
+        deletedAt: null
+    };
     if (user.role !== 'ADMIN') {
         docWhere.OR = [
             { createdBy: user.username },
@@ -1428,14 +1442,19 @@ const getDashboardStats = catchAsync(async (req, res) => {
     // 2. Pending Approval (Documents waiting for ME to approve)
     const approvalFilter: any = {
         status: 'PENDING',
-        createdBy: { not: user.username }
+        createdBy: { not: user.username },
+        deletedAt: null
     };
     if (user.role !== 'ADMIN') approvalFilter.departmentId = user.departmentId;
     const pendingApproval = await prisma.document.count({ where: approvalFilter });
 
     // 3. Pending Sign (Signatures waiting for ME, respecting sequence)
     const myPendingReqs = await prisma.signatureRequest.findMany({
-        where: { userId: user.id, status: 'PENDING' },
+        where: {
+            userId: user.id,
+            status: 'PENDING',
+            document: { deletedAt: null }
+        },
         select: { id: true, documentId: true, step: true }
     });
 
@@ -1486,7 +1505,8 @@ const getDashboardStats = catchAsync(async (req, res) => {
         where: {
             status: 'SIGNED',
             updatedBy: user.username,
-            updatedAt: { gte: startOfDay, lte: endOfDay }
+            updatedAt: { gte: startOfDay, lte: endOfDay },
+            deletedAt: null
         }
     });
 

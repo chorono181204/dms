@@ -62,7 +62,7 @@ const createCategory = async (categoryBody: any): Promise<Category> => {
             }
 
             const dept = await prisma.department.findUnique({
-                where: { id: deptId }
+                where: { id: Number(deptId) } // Ensure ID is number
             });
 
             if (!dept) {
@@ -440,8 +440,12 @@ const getVisibleCategoryIds = async (user: any, createdByFilter?: string): Promi
 
     // 3. Categories with accessible TEMPLATES (Validation for Template Mode)
     // We must also check templates to ensure folders containing ONLY shared templates are visible
-    const accessibleTemplates = await prisma.template.findMany({
-        where: user.role === 'ADMIN' ? (createdByFilter ? { createdBy: createdByFilter } : {}) : {
+    // 3. Categories with accessible TEMPLATES (Validation for Template Mode)
+    // We must also check templates to ensure folders containing ONLY shared templates are visible
+    // NOW USING DOCUMENT TABLE
+    const accessibleTemplates = await prisma.document.findMany({
+        where: user.role === 'ADMIN' ? (createdByFilter ? { createdBy: createdByFilter } : { isTemplate: true }) : {
+            isTemplate: true, // Explicitly target templates
             OR: [
                 { createdBy: createdByFilter || user.username },
                 ...(createdByFilter ? [] : [
@@ -459,8 +463,7 @@ const getVisibleCategoryIds = async (user: any, createdByFilter?: string): Promi
                     }
                 ])
             ],
-            // Templates don't have deletedAt, check isActive
-            isActive: true
+            deletedAt: null
         },
         select: { categoryId: true }
     });
@@ -520,6 +523,13 @@ const getCategoryContents = async (categoryId: number | string, user: any, optio
     // Filter Folders by Department if provided
     if (departmentId) {
         folderWhere.departmentId = departmentId;
+    }
+
+    // Filter Folders by isTemplate
+    if (isTemplateMode) {
+        folderWhere.isTemplate = true;
+    } else {
+        folderWhere.isTemplate = false;
     }
 
     // 2. Items (Document/Template) Filter
@@ -586,29 +596,37 @@ const getCategoryContents = async (categoryId: number | string, user: any, optio
         if (id === null) {
             // Global Search
             folderWhere.name = { contains: search };
-            itemWhere[isTemplateMode ? 'name' : 'title'] = { contains: search };
+            itemWhere.title = { contains: search }; // Unified 'title'
         } else {
             // Scoped Search
             folderWhere.parentId = id;
             folderWhere.name = { contains: search };
 
             itemWhere.categoryId = id;
-            itemWhere[isTemplateMode ? 'name' : 'title'] = { contains: search };
+            itemWhere.title = { contains: search }; // Unified 'title'
         }
     } else {
         // Normal Navigation
         folderWhere.parentId = id;
         itemWhere.categoryId = id;
+
+        // Force isTemplate filter on items
+        if (isTemplateMode) {
+            itemWhere.isTemplate = true;
+        } else {
+            itemWhere.isTemplate = false;
+        }
     }
 
     // --- Execute Queries ---
 
     // Count selection for folders depends on type
+    // Count selection for folders depends on type
     const folderCountSelect = isTemplateMode ? {
-        templates: { where: baseWhere },
+        documents: { where: { ...baseWhere, isTemplate: true } },
         children: true
     } : {
-        documents: { where: baseWhere },
+        documents: { where: { ...baseWhere, isTemplate: false } },
         children: true
     };
 
@@ -626,47 +644,37 @@ const getCategoryContents = async (categoryId: number | string, user: any, optio
             ]
         }),
         // Get Items (Docs or Templates)
-        isTemplateMode ?
-            prisma.template.findMany({
-                where: itemWhere,
-                skip,
-                take: limit,
-                orderBy: { id: 'desc' },
-                include: {
-                    category: { select: { id: true, name: true } },
-                    department: { select: { id: true, name: true } },
-                    permissions: { select: { userId: true, permission: true } }
-                }
-            }) :
-            prisma.document.findMany({
-                where: itemWhere,
-                skip,
-                take: limit,
-                orderBy: { updatedAt: 'desc' },
-                select: {
-                    id: true,
-                    code: true,
-                    title: true,
-                    status: true,
-                    visibility: true,
-                    accessLevel: true,
-                    departmentId: true,
-                    permissions: { select: { userId: true, permission: true } },
-                    createdBy: true,
-                    createdByName: true,
-                    updatedAt: true,
-                    updatedBy: true,
-                    updatedByName: true,
-                    effectiveDate: true,
-                    expirationDate: true,
-                    isReference: true,
-                    content: true,
-                    category: { select: { id: true, name: true } },
-                    department: { select: { id: true, name: true } }
-                }
-            }),
+        // Get Items (Docs or Templates) - NOW UNIFIED under Document Table
+        prisma.document.findMany({
+            where: itemWhere,
+            skip,
+            take: limit,
+            orderBy: { updatedAt: 'desc' },
+            select: {
+                id: true,
+                code: true,
+                title: true,
+                status: true,
+                visibility: true,
+                accessLevel: true,
+                departmentId: true,
+                permissions: { select: { userId: true, permission: true } },
+                createdBy: true,
+                createdByName: true,
+                updatedAt: true,
+                updatedBy: true,
+                updatedByName: true,
+                effectiveDate: true,
+                expirationDate: true,
+                isReference: true,
+                isTemplate: true, // Specific field
+                content: true,
+                category: { select: { id: true, name: true } },
+                department: { select: { id: true, name: true } }
+            }
+        }),
         // Count Items
-        isTemplateMode ? prisma.template.count({ where: itemWhere }) : prisma.document.count({ where: itemWhere })
+        prisma.document.count({ where: itemWhere })
     ]);
 
     const foldersWithMetadata = subFolders.map(folder => {

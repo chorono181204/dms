@@ -18,9 +18,10 @@ interface DocumentModalProps {
     onSuccess: () => void;
     documentId?: number | null;
     defaultCategoryId?: number | null;
+    isTemplate?: boolean; // New Prop
 }
 
-const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSuccess, documentId, defaultCategoryId }) => {
+const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSuccess, documentId, defaultCategoryId, isTemplate }) => {
     const [form] = Form.useForm();
     const { user } = useAuth();
     const canCreateConfidential = user.role === 'ADMIN' || user.department?.isSupervisory;
@@ -94,11 +95,22 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
                 limit: 100,
                 departmentId: user.departmentId
             });
-            setCategories(result.results || []);
+            // Filter categories based on isTemplate mode
+            const allCats = result.results || [];
+            if (isTemplate) {
+                setCategories(allCats.filter((c: any) => c.isTemplate));
+            } else {
+                setCategories(allCats.filter((c: any) => !c.isTemplate));
+            }
         } catch (error) {
             console.error('Failed to fetch categories');
         }
     };
+
+    // Re-fetch categories if isTemplate changes (though generic fetch usually happens on mount/visible)
+    useEffect(() => {
+        if (visible) fetchCategories();
+    }, [isTemplate, visible]);
 
     const fetchDepartments = async () => {
         try {
@@ -170,6 +182,7 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
             if (values.status) formData.append('status', values.status);
             if (values.categoryId) formData.append('categoryId', values.categoryId);
             formData.append('isReference', values.isReference ? 'true' : 'false');
+            if (isTemplate) formData.append('isTemplate', 'true'); // Add flag
 
             if (values.effectiveDate) formData.append('effectiveDate', values.effectiveDate.toISOString());
             if (values.expirationDate) formData.append('expirationDate', values.expirationDate.toISOString());
@@ -198,7 +211,7 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
                     return;
                 }
             } else {
-                formData.append('departmentId', user.departmentId || ''); // Should specific field or inherit?
+                formData.append('departmentId', String(user?.departmentId || '')); // Should specific field or inherit?
                 // Controller will use user.departmentId if not sent.
             }
 
@@ -272,7 +285,7 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
 
     return (
         <Modal
-            title={documentId ? 'Cập nhật tài liệu' : 'Thêm mới tài liệu'}
+            title={documentId ? (isTemplate ? 'Cập nhật mẫu' : 'Cập nhật tài liệu') : (isTemplate ? 'Thêm mới mẫu' : 'Thêm mới tài liệu')}
             open={visible}
             onOk={handleOk}
             onCancel={onCancel}
@@ -496,8 +509,8 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ visible, onCancel, onSucc
                     </Form>
                 </TabPane>
 
-                {/* TAB 2: TRÌNH KÝ */}
-                {!isReference && (
+                {/* TAB 2: TRÌNH KÝ (Hide for templates) */}
+                {!isReference && !isTemplate && (
                     <TabPane tab="Trình ký (Luồng ký)" key="2">
                         <div style={{ marginBottom: 16, background: '#e6f7ff', padding: 12, borderRadius: 6, border: '1px solid #91d5ff' }}>
                             <p style={{ margin: 0, fontSize: 13 }}>

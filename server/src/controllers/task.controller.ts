@@ -38,6 +38,9 @@ const createTask = catchAsync(async (req, res) => {
         }
 
         for (const file of req.files as Express.Multer.File[]) {
+            // Fix encoding
+            file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
             const fileExt = path.extname(file.originalname);
             const fileName = `${task.id}_${Date.now()}_${file.originalname}`;
             const filePath = path.join(uploadDir, fileName);
@@ -355,6 +358,9 @@ const updateTask = catchAsync(async (req, res) => {
         }
 
         for (const file of req.files as Express.Multer.File[]) {
+            // Fix encoding
+            file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
             const fileName = `${task.id}_${Date.now()}_${file.originalname}`;
             const filePath = path.join(uploadDir, fileName);
 
@@ -431,6 +437,9 @@ const addTaskComment = catchAsync(async (req, res) => {
         }
 
         for (const file of req.files as Express.Multer.File[]) {
+            // Fix encoding
+            file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
             const fileName = `${task.id}_${comment.id}_${Date.now()}_${file.originalname}`;
             const filePath = path.join(uploadDir, fileName);
 
@@ -547,6 +556,85 @@ const deleteTask = catchAsync(async (req, res) => {
     res.status(httpStatus.NO_CONTENT).send();
 });
 
+const deleteTaskAttachment = catchAsync(async (req, res) => {
+    const { taskId, attachmentId } = req.params;
+    const user = req.user as any;
+
+    const task = await prisma.task.findUnique({
+        where: { id: Number(taskId) },
+        include: { assignees: true }
+    });
+
+    if (!task) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Task not found');
+    }
+
+    // Permission Check: 
+    // - Assigner (Owner)
+    // - Admin
+    // - Uploader of the file? (Ideally)
+    // - Or Assignee/Approver if they are involved?
+    const isAssigner = task.assignerId === user.id;
+    const isAssignee = task.assignees.some(a => a.id === user.id);
+    const isApprover = task.approverId === user.id;
+
+    if (!isAssigner && !isAssignee && !isApprover && user.role !== 'ADMIN') {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Bạn không có quyền xóa tệp đính kèm của công việc này');
+    }
+
+    const attachment = await prisma.taskAttachment.findUnique({
+        where: { id: Number(attachmentId) }
+    });
+
+    if (!attachment || attachment.taskId !== Number(taskId)) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Attachment not found');
+    }
+
+    // Optional: Restrict deletion to uploader or Assigner/Admin only? 
+    // For now allow anyone involved to remove attachments if they have edit rights effectively.
+    // Ideally: Only Uploader or Assigner/Admin.
+    const isUploader = attachment.uploadedBy === user.username;
+    if (!isUploader && !isAssigner && user.role !== 'ADMIN') {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Chỉ người tải lên hoặc người giao việc mới có thể xóa tệp này');
+    }
+
+    // Delete file from filesystem
+    if (fs.existsSync(attachment.filePath)) {
+        try {
+            fs.unlinkSync(attachment.filePath);
+        } catch (err) {
+            console.error('Error deleting file:', err);
+        }
+    }
+
+    // Delete from DB
+    await prisma.taskAttachment.delete({
+        where: { id: Number(attachmentId) }
+    });
+
+    // Real-time update - we might want to emit task updated
+    const updatedTask = await prisma.task.findUnique({
+        where: { id: Number(taskId) },
+        include: {
+            assignees: { select: { id: true, name: true, username: true } },
+            assigner: { select: { id: true, name: true, username: true } },
+            approver: { select: { id: true, name: true, username: true } },
+            attachments: true,
+            comments: {
+                include: {
+                    user: { select: { id: true, name: true, username: true, role: true } },
+                    attachments: true
+                },
+                orderBy: { createdAt: 'asc' }
+            }
+        }
+    });
+
+    io.emit('task_updated', updatedTask);
+
+    res.status(httpStatus.OK).send(updatedTask);
+});
+
 export default {
     createTask,
     getTasks,
@@ -554,5 +642,6 @@ export default {
     updateTask,
     deleteTask,
     addTaskComment,
-    getTaskDetails
+    getTaskDetails,
+    deleteTaskAttachment
 };
