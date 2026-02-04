@@ -311,29 +311,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                     <Input.TextArea rows={4} placeholder="Mô tả chi tiết công việc..." />
                 </Form.Item>
 
-                {/* Existing Attachments Display */}
-                {task && attachments && attachments.length > 0 && (
-                    <div style={{ marginBottom: 16 }}>
-                        <div style={{ marginBottom: 8 }}>Tài liệu đính kèm:</div>
-                        {attachments.map((att: any) => (
-                            <div key={att.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                <Button type="link" onClick={() => handleDownload(att)} style={{ padding: 0 }}>
-                                    {att.fileName}
-                                </Button>
-                                {canEdit && (
-                                    <Button
-                                        type="text"
-                                        danger
-                                        size="small"
-                                        icon={<DeleteOutlined />}
-                                        onClick={() => handleRemoveAttachment(att.id)}
-                                    />
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                )}
-
                 {/* Only show upload if can edit */}
                 {canEdit && (
                     <Form.Item label="Đính kèm tệp">
@@ -352,6 +329,29 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                     </Form.Item>
                 )}
             </Form>
+
+            {/* Existing Attachments Display - Moved OUTSIDE Form to avoid disabled state */}
+            {task && attachments && attachments.length > 0 && (
+                <div style={{ marginBottom: 16, marginTop: 16, borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
+                    <div style={{ marginBottom: 8, fontWeight: 500 }}>Tài liệu đính kèm:</div>
+                    {attachments.map((att: any) => (
+                        <div key={att.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <Button type="link" onClick={() => handleDownload(att)} style={{ padding: 0 }}>
+                                {att.fileName}
+                            </Button>
+                            {canEdit && (
+                                <Button
+                                    type="text"
+                                    danger
+                                    size="small"
+                                    icon={<DeleteOutlined />}
+                                    onClick={() => handleRemoveAttachment(att.id)}
+                                />
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {detailedTask && (
                 <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>

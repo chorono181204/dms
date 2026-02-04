@@ -196,6 +196,27 @@ const downloadFile = catchAsync(async (req, res) => {
                 }
             }
 
+            // TASK ATTACHMENT CHECK (Fallback)
+            let isTaskParticipant = false;
+            if (!canView) {
+                const taskAtt = await prisma.taskAttachment.findFirst({
+                    where: { filePath: filePath },
+                    include: { task: { include: { assignees: true } } }
+                });
+
+                if (taskAtt && taskAtt.task) {
+                    const userId = Number(user.id);
+                    const isAssignee = taskAtt.task.assignees.some((a: any) => a.id === userId);
+                    const isAssigner = taskAtt.task.assignerId === userId;
+                    const isApprover = taskAtt.task.approverId === userId;
+
+                    if (isAssignee || isAssigner || isApprover) {
+                        canView = true;
+                        isTaskParticipant = true;
+                    }
+                }
+            }
+
             if (!canView) {
                 throw new ApiError(httpStatus.FORBIDDEN, 'Bạn không có quyền truy cập tài liệu này');
             }
@@ -206,7 +227,8 @@ const downloadFile = catchAsync(async (req, res) => {
 
                 // Can download if owner, has explicit permission, or has a signature request
                 // OR if it's not PRIVATE and NOT set to VIEW-only accessLevel
-                const canDownload = isOwner || hasExplicitDownload || hasSignatureRequest ||
+                // OR if user is a valid Task Participant
+                const canDownload = isOwner || hasExplicitDownload || hasSignatureRequest || isTaskParticipant ||
                     (doc.visibility !== 'PRIVATE' && doc.accessLevel !== 'VIEW');
 
                 if (!canDownload) {
@@ -386,6 +408,25 @@ const viewFile = catchAsync(async (req, res) => {
                     where: { documentId: doc.id, userId: user.id }
                 });
                 if (sigReq) canView = true;
+            }
+
+            // TASK ATTACHMENT CHECK (Fallback for View)
+            if (!canView) {
+                const taskAtt = await prisma.taskAttachment.findFirst({
+                    where: { filePath: filePath },
+                    include: { task: { include: { assignees: true } } }
+                });
+
+                if (taskAtt && taskAtt.task) {
+                    const userId = Number(user.id);
+                    const isAssignee = taskAtt.task.assignees.some((a: any) => a.id === userId);
+                    const isAssigner = taskAtt.task.assignerId === userId;
+                    const isApprover = taskAtt.task.approverId === userId;
+
+                    if (isAssignee || isAssigner || isApprover) {
+                        canView = true;
+                    }
+                }
             }
 
             if (!canView) {
