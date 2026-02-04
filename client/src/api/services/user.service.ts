@@ -18,3 +18,10 @@ export const getUsers = async (params?: any) => {
 export const searchUsers = async (query: string) => {
     return getUsers({ name: query, scope: 'all', limit: 20 });
 };
+
+export const getAssignableUsers = async (params?: any) => {
+    const response = await client.get('/users/assignable', {
+        params
+    });
+    return response.data;
+};

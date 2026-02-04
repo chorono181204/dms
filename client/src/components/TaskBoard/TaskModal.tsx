@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import * as taskService from '../../api/services/task.service';
 import * as userService from '../../api/services/user.service';
 import { useAuth } from '../../contexts/AuthContext';
+import axios from '../../api/client'; // Import configured axios client
 
 interface TaskModalProps {
     visible: boolean;
@@ -118,7 +119,8 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
 
     const loadUsers = async () => {
         try {
-            const data = await userService.getUsers({ limit: 100, scope: 'all' });
+            // Use specialized API for task assignments with role-based filtering
+            const data = await userService.getAssignableUsers({ limit: 1000 });
             setUsers(data.results || []);
         } catch (error) {
             console.error(error);
@@ -185,15 +187,17 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
     const handleDownload = async (file: any) => {
         try {
             message.loading({ content: 'Đang tải xuống...', key: 'download' });
-            const response = await fetch(`/api/v1/upload/download?path=${encodeURIComponent(file.filePath)}&token=${token}`);
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Lỗi tải xuống');
-            }
+            // Use axios to leverage the configured baseURL
+            const response = await axios.get('/upload/download', {
+                params: {
+                    path: file.filePath,
+                    token: token
+                },
+                responseType: 'blob' // Important for binary data
+            });
 
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
+            const url = window.URL.createObjectURL(new Blob([response.data]));
             const a = document.createElement('a');
             a.href = url;
             a.download = file.fileName;
@@ -203,7 +207,8 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
             document.body.removeChild(a);
             message.success({ content: 'Tải xuống thành công', key: 'download' });
         } catch (error: any) {
-            message.error({ content: error.message || 'Không thể tải tập tin', key: 'download' });
+            console.error('Download error:', error);
+            message.error({ content: error.response?.data?.message || 'Không thể tải tập tin', key: 'download' });
         }
     };
 
@@ -289,7 +294,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ visible, onCancel, onSuccess, tas
                             >
                                 {users.map(u => (
                                     <Option key={u.id} value={u.id}>
-                                        {u.name || u.username}
+                                        {u.name || u.username} {u.department?.name ? ` - ${u.department.name}` : ''} {u.isChief ? '(KTV Trưởng)' : ''}
                                     </Option>
                                 ))}
                             </Select>

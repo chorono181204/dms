@@ -18,6 +18,8 @@ router.get('/profile', auth(), userController.getProfile);
 router.patch('/profile', auth(), validate(userValidation.updateProfile), userController.updateProfile);
 router.post('/profile/signature', auth(), upload.single('file'), userController.uploadSignature);
 
+router.get('/assignable', auth('getUsers'), userController.getAssignableUsers);
+
 router
   .route('/:userId')
   .get(auth('getUsers'), validate(userValidation.getUser), userController.getUser)

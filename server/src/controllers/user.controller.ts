@@ -177,9 +177,67 @@ const uploadSignature = catchAsync(async (req: Request, res: Response, next: Nex
   }
 });
 
+const getAssignableUsers = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+  const user = req.user as any;
+  const filter: any = {};
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+
+  // Cast options to numbers (Fix "Provided String, expected Int" error)
+  const limitStr = options.limit;
+  const pageStr = options.page;
+  options.limit = limitStr ? parseInt(limitStr as any, 10) : 1000;
+  options.page = pageStr ? parseInt(pageStr as any, 10) : 1;
+  // Apply name search if present
+  if (req.query.name) {
+    filter.OR = [
+      { name: { contains: req.query.name as string } },
+      { username: { contains: req.query.name as string } }
+    ];
+  }
+
+  const isAdmin = user.role === 'ADMIN';
+  const isManager = user.role === 'MANAGER';
+  // Check if user's department is supervisory (e.g. Quality Control, Board of Directors)
+  const isSupervisory = user.department?.isSupervisory;
+
+  // 1. SCOPE FILTER (Department Level)
+  // Admin OR User in Supervisory Department -> Can see ALL Departments
+  if (isAdmin || isSupervisory) {
+    // No department restriction
+  } else {
+    // Normal Department -> Restricted to Own Department
+    if (user.departmentId) {
+      filter.departmentId = user.departmentId;
+    } else {
+      filter.departmentId = -1; // No dept assigned -> No access
+    }
+  }
+
+  // 2. ROLE FILTER (User Level)
+
+  // GLOBAL RULE: Never show ADMINs in assignment list (unless we want to allow assigning to admins?)
+  // User request: "ko lấy ra admin" -> Exclude ADMIN role always.
+
+  // Admin OR Manager -> Can see Managers, Chiefs, Users (BUT NOT Other Admins)
+  if (isAdmin || isManager) {
+    // Exclude ADMINs from the list
+    // We need to be careful not to overwrite if we set other things, but here it's the first role setting.
+    filter.role = { not: 'ADMIN' };
+  } else {
+    // Chief OR Regular User -> Can ONLY see Regular Users
+    // "ktv trưởng thì chỉ đc lấy ra user thường"
+    filter.role = 'USER';
+    filter.isChief = false;
+  }
+
+  const result = await userService.queryUsers(filter, options);
+  res.send(result);
+});
+
 export default {
   createUser,
   getUsers,
+  getAssignableUsers,
   getUser,
   getProfile,
   updateProfile,
